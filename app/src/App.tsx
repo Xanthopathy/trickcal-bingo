@@ -52,7 +52,6 @@ const readSavedState = (): SavedState => {
     if (!saved) {
       return { board: createEmptyBoard(), pieceType: 'cross', slotPieceType: null }
     }
-
     const parsed: unknown = JSON.parse(saved)
     if (
       typeof parsed === 'object' &&
@@ -172,6 +171,130 @@ function App() {
     boardGrid.addEventListener('wheel', handleWheel, { passive: false })
     return () => boardGrid.removeEventListener('wheel', handleWheel)
   }, [])
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target
+      if (
+        target instanceof HTMLElement &&
+        (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))
+      ) {
+        return
+      }
+      if (event.altKey || event.ctrlKey || event.metaKey) return
+
+      const key = event.key.toLowerCase()
+      if (/^[1-5]$/.test(key)) {
+        const nextPieceType = PIECE_OPTIONS[Number(key) - 1].type
+        setPieceType(nextPieceType)
+        setSelectedPosition(rankPlacements(board, nextPieceType)[0]?.center ?? null)
+        setCursorPosition(null)
+        setHoveredPosition(null)
+        setDismissedHoverPosition(null)
+        event.preventDefault()
+        return
+      }
+
+      if (key === 's') {
+        let nextPieceType = pieceType
+        let nextSlotPieceType = slotPieceType
+        if (slotPieceType) {
+          nextPieceType = slotPieceType
+          nextSlotPieceType = pieceType
+        } else if (pieceType) {
+          nextSlotPieceType = pieceType
+          nextPieceType = null
+        }
+        setPieceType(nextPieceType)
+        setSlotPieceType(nextSlotPieceType)
+        setSelectedPosition(
+          nextPieceType ? rankPlacements(board, nextPieceType)[0]?.center ?? null : null,
+        )
+        setCursorPosition(null)
+        setHoveredPosition(null)
+        setDismissedHoverPosition(null)
+        event.preventDefault()
+        return
+      }
+
+      if (key === 'z') {
+        const previousBoard = history.at(-1)
+        if (previousBoard) {
+          setBoard(previousBoard)
+          setHistory((previous) => previous.slice(0, -1))
+          setSelectedPosition(
+            pieceType ? rankPlacements(previousBoard, pieceType)[0]?.center ?? null : null,
+          )
+          setCursorPosition(null)
+          setHoveredPosition(null)
+          setDismissedHoverPosition(null)
+        }
+        event.preventDefault()
+        return
+      }
+
+      if (key === 'r') {
+        const emptyBoard = createEmptyBoard()
+        setBoard(emptyBoard)
+        setPieceType('cross')
+        setSlotPieceType(null)
+        setHistory([])
+        setSelectedPosition(rankPlacements(emptyBoard, 'cross')[0]?.center ?? null)
+        setCursorPosition(null)
+        setHoveredPosition(null)
+        setDismissedHoverPosition(null)
+        event.preventDefault()
+        return
+      }
+
+      if (key === 'p') {
+        const center = cursorPosition ?? hoveredPosition ?? selectedPosition
+        if (center && pieceType) {
+          setHistory((previous) => [...previous, board].slice(-30))
+          const nextBoard = placePiece(board, pieceType, center)
+          setBoard(nextBoard)
+          setSelectedPosition(rankPlacements(nextBoard, pieceType)[0]?.center ?? null)
+          setCursorPosition(null)
+          setHoveredPosition(null)
+          setDismissedHoverPosition(null)
+        }
+        event.preventDefault()
+        return
+      }
+
+      const candidateIndexByKey: Record<string, number> = {
+        '7': 0,
+        '8': 1,
+        '9': 2,
+        '0': 3,
+      }
+      const candidateIndex = candidateIndexByKey[key]
+      if (candidateIndex !== undefined && pieceType) {
+        const candidate = rankPlacements(board, pieceType)[candidateIndex]
+        if (candidate) {
+          const isSelected =
+            selectedPosition?.row === candidate.center.row &&
+            selectedPosition.col === candidate.center.col
+          setSelectedPosition(isSelected ? null : candidate.center)
+          setCursorPosition(null)
+          setHoveredPosition(null)
+          setDismissedHoverPosition(isSelected ? candidate.center : null)
+          event.preventDefault()
+        }
+        return
+      }
+
+      if (key === 'escape') {
+        setSelectedPosition(null)
+        setCursorPosition(null)
+        setHoveredPosition(null)
+        setDismissedHoverPosition(null)
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [board, cursorPosition, history, hoveredPosition, pieceType, selectedPosition, slotPieceType])
 
   const commitPlacement = (center: Position | null) => {
     if (!center || !pieceType) return
@@ -347,6 +470,10 @@ function App() {
               </button>
             </div>
           </section>
+
+          <div className="control-note">
+            Hotkeys: 1–5 piece · S swap · Z undo · R restart · P place · 7–0 candidates · Esc clear preview
+          </div>
 
         </aside>
 
@@ -553,7 +680,12 @@ function App() {
             </div>
             {completedLines.length > 0 && (
               <ul className="completed-list">
-                {completedLines.map((line) => <li key={line.id}><span>{line.label}</span><strong>{line.reward}</strong></li>)}
+                {completedLines.map((line) => (
+                  <li key={line.id}>
+                    <span>{line.label}</span>
+                    <strong>{line.reward}</strong>
+                  </li>
+                ))}
               </ul>
             )}
             {progressLines.length > 0 ? (
