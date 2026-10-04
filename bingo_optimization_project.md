@@ -89,6 +89,10 @@ The exact random distribution has not yet been measured. The current player esti
 
 These frequencies must be treated as **configurable estimates**, not established facts, until actual gameplay data is collected.
 
+### Storage slot
+
+The player has one slot that can hold one piece in addition to the piece currently in hand. The player may freely swap the current piece with the stored piece at any time; swapping does not consume a turn or either piece. The slot can therefore be used to save a useful piece and bring it back into hand later. The stored piece does not carry over when moving to a new board.
+
 ### Overlap
 
 Pieces may be placed over already occupied cells.
@@ -164,8 +168,10 @@ The key insight is that each piece type has a natural role:
 - **Crosses:** excellent for building the two diagonals.
 - **Horizontal:** ideally Row 4; after that, an outer/high-value row.
 - **Vertical:** ideally Column D; after that, an outer/high-value column.
-- **Pluses:** flexible repair/fill pieces, especially around D4 and incomplete lines.
+- **Pluses:** flexible repair/fill pieces for incomplete lines. D4 is a useful candidate because it contributes to Row 4 and Column D, but it should not be assumed to be the optimal opening placement.
 - **3×3 Square:** rare wildcard that can cover a large concentration of valuable missing cells.
+
+On an empty board, the current heuristic ranks a Plus at D3 above D4: D3 advances each diagonal by two cells (through C3/E3 and the shared D4 cell), while D4 advances each diagonal by one. D4 adds more progress to Row 4, but the current diagonal weights make D3 score higher. Treat this as a result of the current heuristic weights, not proof that D3 is universally optimal; compare candidate placements and validate the weights through simulation.
 
 ### Cross diagonal skeleton
 
@@ -227,7 +233,8 @@ The main screen should contain:
 
 - Interactive 7×7 board
 - Current occupied/empty state
-- Piece selector for all five pieces:
+- Current piece and the one-piece placeholder/item slot, including a free swap control
+- Piece selector for all five piece types:
   - Plus
   - Cross
   - Horizontal
@@ -239,7 +246,7 @@ The main screen should contain:
 - Current bingo/reward status
 - Reset/clear board controls
 
-The user should be able to select a piece and preview where it can be placed.
+The user should be able to select the piece currently in hand or swap with the stored piece, then preview where the active piece can be placed. Swapping should not advance the turn.
 
 ### Placement preview
 
@@ -255,7 +262,7 @@ The interface should make it immediately obvious why a particular placement is r
 
 ### Recommendation engine
 
-For the current board + current piece, calculate all legal placements.
+For the current board, current piece, and placeholder/item slot contents, calculate legal placements for either piece. The recommendation should consider whether swapping first enables a better move; because swapping is free, compare the best placement for each available piece without treating the swap as a turn cost.
 
 For every candidate placement, calculate at minimum:
 
@@ -399,12 +406,13 @@ A major feature should be a simulation comparison page.
 Given the same:
 
 - Initial board
+- Current piece and initial placeholder/item slot contents
 - Piece distribution
 - Reset rule
 - Number of trials
 - Reward model
 
-run multiple algorithms against identical random sequences.
+run multiple algorithms against identical random sequences. Each algorithm may swap the hand piece and stored piece freely before placing; simulations should model that choice and use the same starting slot state for every algorithm.
 
 Compare metrics such as:
 
