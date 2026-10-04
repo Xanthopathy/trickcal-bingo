@@ -22,7 +22,7 @@ import {
 import './App.css'
 
 const STORAGE_KEY = 'bingo-adaptive-board-v1'
-const DEFAULT_SKIP_THRESHOLD = 42
+const DEFAULT_SKIP_THRESHOLD = 39
 const LETTERS = 'ABCDEFG'.split('')
 const PIECE_OPTIONS: { type: PieceType; name: string }[] = [
   { type: 'plus', name: 'Plus' },
@@ -113,7 +113,7 @@ const readSavedState = (): SavedState => {
             Number.isInteger(parsed.skipThreshold) &&
             parsed.skipThreshold >= 1 &&
             parsed.skipThreshold <= BOARD_SIZE * BOARD_SIZE
-            ? parsed.skipThreshold
+            ? parsed.skipThreshold === 42 ? DEFAULT_SKIP_THRESHOLD : parsed.skipThreshold
             : DEFAULT_SKIP_THRESHOLD,
       }
     }
@@ -612,14 +612,14 @@ function App() {
             </div>
           </section>
 
-          <div className="skip-progress" aria-label={`${coveredCount} of ${skipThreshold} tiles covered toward skip threshold`}>
+          <div className="skip-progress" aria-label={`${coveredCount} of ${BOARD_SIZE * BOARD_SIZE} tiles covered; skip threshold at ${skipThreshold}`}>
             <div className="skip-progress-track">
-              <span style={{ width: `${Math.min(coveredCount / skipThreshold, 1) * 100}%` }} />
-              <i style={{ left: `${(skipThreshold / 49) * 100}%` }} />
+              <span style={{ width: `${Math.min(coveredCount / (BOARD_SIZE * BOARD_SIZE), 1) * 100}%` }} />
+              <i style={{ left: `${(skipThreshold / (BOARD_SIZE * BOARD_SIZE)) * 100}%` }} />
             </div>
             <div className="skip-progress-labels">
-              <span>Skip threshold</span>
-              <span>{coveredCount} / {skipThreshold}</span>
+              <span>Skip at {skipThreshold}</span>
+              <span>{coveredCount} / {BOARD_SIZE * BOARD_SIZE}</span>
             </div>
           </div>
 
@@ -678,10 +678,6 @@ function App() {
               </button>
             </div>
           </section>
-
-          <div className="control-note">
-            Hotkeys: 1–5 piece · S swap · Z undo · R restart · P place · 7–0 candidates · Esc clear preview
-          </div>
 
         </aside>
 
@@ -778,6 +774,9 @@ function App() {
           </div>
           <p className="board-hint">Click to preview · Double-click to place</p>
           <p className="board-scroll-note">Scroll over the board to cycle the hand piece.</p>
+          <div className="control-note">
+            Hotkeys: 1–5 piece · S swap · Z undo · R restart · P place · 7–0 candidates · Esc clear preview
+          </div>
         </section>
 
         <aside className="analysis-column board-analysis" aria-label="Board analysis">
@@ -822,21 +821,6 @@ function App() {
                   <div><strong>{recommendation.overlaps}</strong><span>overlaps</span></div>
                   <div><strong>{recommendation.completedLines.length}</strong><span>bingos</span></div>
                 </div>
-                {pieceType && slotPieceType && storedRecommendation && (
-                  <>
-                    <p className="stored-piece-context">
-                      {shouldSwapForImmediateValue
-                        ? `Swap in ${PIECE_OPTIONS.find((option) => option.type === slotPieceType)?.name}: it has the stronger placement on this board. Your ${PIECE_OPTIONS.find((option) => option.type === pieceType)?.name} will stay stored for later.`
-                        : `Keep ${PIECE_OPTIONS.find((option) => option.type === pieceType)?.name} in hand: it has the stronger placement on this board. The stored ${PIECE_OPTIONS.find((option) => option.type === slotPieceType)?.name} remains available for later.`}
-                      {' '}Future board flexibility is not simulated.
-                    </p>
-                    {shouldSwapForImmediateValue && (
-                      <button className="swap-button" type="button" onClick={swapSlot}>
-                        Swap to stored piece
-                      </button>
-                    )}
-                  </>
-                )}
                 <button
                   className="primary-button"
                   type="button"
@@ -846,11 +830,6 @@ function App() {
                   Place at {activePosition ? positionLabel(activePosition) : '—'}
                   <span aria-hidden="true">→</span>
                 </button>
-                {slotPieceType && !pieceType && (
-                  <p className="stored-piece-context">
-                    Stored {PIECE_OPTIONS.find((option) => option.type === slotPieceType)?.name} can be swapped in before placing.
-                  </p>
-                )}
               </>
             ) : (
               <p className="empty-note">Select a piece in hand to calculate recommendations.</p>
@@ -891,8 +870,14 @@ function App() {
                 </div>
               </div>
             )}
+            <div className="swap-advice" aria-live="polite">
+              {pieceType && slotPieceType && storedRecommendation && recommendation
+                ? shouldSwapForImmediateValue
+                  ? `Swap to stored ${PIECE_OPTIONS.find((option) => option.type === slotPieceType)?.name} for a stronger placement now; keep ${PIECE_OPTIONS.find((option) => option.type === pieceType)?.name} for later. Future flexibility is not simulated.`
+                  : `Keep ${PIECE_OPTIONS.find((option) => option.type === pieceType)?.name} in hand for a stronger placement now; save ${PIECE_OPTIONS.find((option) => option.type === slotPieceType)?.name} for later. Future flexibility is not simulated.`
+                : 'Choose a hand piece and store a second piece to compare current-board placements.'}
+            </div>
           </section>
-
           <section className="lines-section">
             <div className="panel-heading">
               <div>

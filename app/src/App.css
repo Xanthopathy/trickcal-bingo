@@ -522,6 +522,11 @@
   text-align: center;
 }
 
+.board-section .control-note {
+  width: 100%;
+  text-align: center;
+}
+
 .piece-section,
 .slot-section,
 .recommendation-section,
@@ -532,7 +537,7 @@
 
 .piece-controls .piece-section { padding-top: 11px; }
 .piece-controls .slot-section { border-bottom: 0; }
-.board-analysis .recommendation-section { border-bottom-color: #354638; }
+.board-analysis .recommendation-section { padding-top: 0; border-bottom-color: #354638; }
 .board-analysis .lines-section { border-bottom: 0; }
 
 .piece-name,
@@ -743,9 +748,22 @@
 .primary-button:hover:not(:disabled) { background: #358954; }
 .primary-button:disabled { background: #34483a; color: #aeb9b0; cursor: default; }
 .primary-button > span { font-size: 17px; }
-.stored-piece-context { margin: 8px 0 0; color: #d5c9ed; font-size: 12px; line-height: 1.4; }
+.swap-advice {
+  box-sizing: border-box;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, currentColor 28%, transparent);
+  border-radius: 5px;
+  background: color-mix(in srgb, currentColor 6%, transparent);
+  color: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+}
 
-.alternatives { margin-top: 12px; }
+.alternatives { margin-top: 12px; padding-bottom: 10px; }
 .alternatives-title {
   margin: 0 0 4px;
   color: #e2d5ef;
