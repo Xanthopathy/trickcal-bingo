@@ -1184,3 +1184,29 @@
   .alternative-candidates { gap: 4px; }
   .alternative-row { padding-inline: 4px; }
 }
+
+.recommended-move.is-selected,
+.alternative-row.is-selected {
+  border-color: #c6aff0;
+  background: #352d43;
+  box-shadow: 0 0 0 2px rgba(198, 175, 240, 0.3), 0 0 13px rgba(164, 132, 217, 0.2);
+}
+
+.recommended-move.is-selected p,
+.alternative-row.is-selected .alternative-position {
+  color: #f1eaff;
+}
+
+.recommended-move.is-hover-dismissed,
+.recommended-move.is-hover-dismissed:hover,
+.recommended-move.is-hover-dismissed:focus-visible {
+  border-color: #4d5b50;
+  background: #202521;
+  box-shadow: none;
+}
+
+.alternative-row.is-hover-dismissed:hover {
+  border-color: #454e47;
+  background: #222724;
+  box-shadow: none;
+}

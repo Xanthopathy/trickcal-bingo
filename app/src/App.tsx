@@ -6,6 +6,7 @@ import {
   canPlacePiece,
   countLineCells,
   createEmptyBoard,
+  getPlacementCenter,
   getCompletedLines,
   placePiece,
   rankPlacements,
@@ -101,15 +102,20 @@ function App() {
   const [slotPieceType, setSlotPieceType] = useState<PieceType | null>(savedState.slotPieceType)
   const [history, setHistory] = useState<Board[]>([])
   const [hoveredPosition, setHoveredPosition] = useState<Position | null>(null)
-  const [selectedPosition, setSelectedPosition] = useState<Position | null>(null)
+  const [cursorPosition, setCursorPosition] = useState<Position | null>(null)
+  const [selectedPosition, setSelectedPosition] = useState<Position | null>(() =>
+    savedState.pieceType
+      ? rankPlacements(savedState.board, savedState.pieceType)[0]?.center ?? null
+      : null,
+  )
+  const [dismissedHoverPosition, setDismissedHoverPosition] = useState<Position | null>(null)
   const boardGridRef = useRef<HTMLDivElement>(null)
 
   const recommendations = pieceType ? rankPlacements(board, pieceType) : []
   const recommendation = recommendations[0] ?? null
   const activePosition =
-    hoveredPosition ?? selectedPosition ?? recommendation?.center ?? null
-  const isAutomaticSuggestion =
-    hoveredPosition === null && selectedPosition === null
+    cursorPosition ?? hoveredPosition ?? selectedPosition ?? null
+  const isAutomaticSuggestion = cursorPosition === null
   const completedLines = getCompletedLines(board)
   const coveredCount = board.reduce(
     (total, row) => total + row.filter(Boolean).length,
@@ -158,6 +164,7 @@ function App() {
           : (currentIndex + direction + PIECE_OPTIONS.length) % PIECE_OPTIONS.length
         return PIECE_OPTIONS[nextIndex].type
       })
+      setCursorPosition(null)
       setHoveredPosition(null)
       setSelectedPosition(null)
     }
@@ -169,9 +176,12 @@ function App() {
   const commitPlacement = (center: Position | null) => {
     if (!center || !pieceType) return
     setHistory((previous) => [...previous, board].slice(-30))
-    setBoard(placePiece(board, pieceType, center))
+    const nextBoard = placePiece(board, pieceType, center)
+    setBoard(nextBoard)
+    setSelectedPosition(rankPlacements(nextBoard, pieceType)[0]?.center ?? null)
+    setCursorPosition(null)
     setHoveredPosition(null)
-    setSelectedPosition(null)
+    setDismissedHoverPosition(null)
   }
 
   const undo = () => {
@@ -179,29 +189,55 @@ function App() {
     if (!previousBoard) return
     setBoard(previousBoard)
     setHistory((previous) => previous.slice(0, -1))
+    setSelectedPosition(
+      pieceType ? rankPlacements(previousBoard, pieceType)[0]?.center ?? null : null,
+    )
+    setCursorPosition(null)
     setHoveredPosition(null)
-    setSelectedPosition(null)
+    setDismissedHoverPosition(null)
   }
 
   const startNewBoard = () => {
-    setBoard(createEmptyBoard())
+    const emptyBoard = createEmptyBoard()
+    setBoard(emptyBoard)
     setPieceType('cross')
     setSlotPieceType(null)
     setHistory([])
+    setSelectedPosition(rankPlacements(emptyBoard, 'cross')[0]?.center ?? null)
+    setCursorPosition(null)
     setHoveredPosition(null)
-    setSelectedPosition(null)
+    setDismissedHoverPosition(null)
   }
 
   const swapSlot = () => {
+    let nextPieceType = pieceType
+    let nextSlotPieceType = slotPieceType
+
     if (slotPieceType) {
-      setPieceType(slotPieceType)
-      setSlotPieceType(pieceType)
+      nextPieceType = slotPieceType
+      nextSlotPieceType = pieceType
     } else if (pieceType) {
-      setSlotPieceType(pieceType)
-      setPieceType(null)
+      nextSlotPieceType = pieceType
+      nextPieceType = null
     }
+
+    setPieceType(nextPieceType)
+    setSlotPieceType(nextSlotPieceType)
+    setSelectedPosition(
+      nextPieceType ? rankPlacements(board, nextPieceType)[0]?.center ?? null : null,
+    )
+    setCursorPosition(null)
     setHoveredPosition(null)
-    setSelectedPosition(null)
+    setDismissedHoverPosition(null)
+  }
+
+  const toggleRecommendation = (center: Position) => {
+    const isSelected =
+      selectedPosition?.row === center.row && selectedPosition.col === center.col
+
+    setSelectedPosition(isSelected ? null : center)
+    setHoveredPosition(null)
+    setDismissedHoverPosition(isSelected ? center : null)
   }
 
   const previewCells = new Map<string, boolean>()
@@ -272,8 +308,10 @@ function App() {
                   title={option.name}
                   onClick={() => {
                     setPieceType(option.type)
+                    setSelectedPosition(rankPlacements(board, option.type)[0]?.center ?? null)
+                    setCursorPosition(null)
                     setHoveredPosition(null)
-                    setSelectedPosition(null)
+                    setDismissedHoverPosition(null)
                   }}
                 >
                   <PieceIcon pieceType={option.type} />
@@ -351,6 +389,9 @@ function App() {
               {board.map((row, rowIndex) =>
                 row.map((covered, colIndex) => {
                   const center = { row: rowIndex, col: colIndex }
+                  const placementCenter = pieceType
+                    ? getPlacementCenter(pieceType, center)
+                    : center
                   const key = `${rowIndex}-${colIndex}`
                   const preview = previewCells.get(key)
                   const isRecommended = recommendation?.center.row === rowIndex && recommendation.center.col === colIndex
@@ -378,12 +419,12 @@ function App() {
                       key={key}
                       aria-label={`${LETTERS[colIndex]}${rowIndex + 1}${covered ? ', covered' : ', empty'}`}
                       title={`${LETTERS[colIndex]}${rowIndex + 1}`}
-                      onMouseEnter={() => setHoveredPosition(center)}
-                      onMouseLeave={() => setHoveredPosition(null)}
-                      onFocus={() => setHoveredPosition(center)}
+                      onMouseEnter={() => setCursorPosition(placementCenter)}
+                      onMouseLeave={() => setCursorPosition(null)}
+                      onFocus={() => setHoveredPosition(placementCenter)}
                       onBlur={() => setHoveredPosition(null)}
-                      onClick={() => setSelectedPosition(center)}
-                      onDoubleClick={() => commitPlacement(center)}
+                      onClick={() => setSelectedPosition(placementCenter)}
+                      onDoubleClick={() => commitPlacement(placementCenter)}
                     />
                   )
                 }),
@@ -417,14 +458,26 @@ function App() {
             {recommendation && pieceType ? (
               <>
                 <button
-                  className={`recommended-move ${selectedPosition?.row === recommendation.center.row && selectedPosition.col === recommendation.center.col ? 'is-selected' : ''}`}
+                  className={`recommended-move ${selectedPosition?.row === recommendation.center.row && selectedPosition.col === recommendation.center.col ? 'is-selected' : ''} ${dismissedHoverPosition?.row === recommendation.center.row && dismissedHoverPosition.col === recommendation.center.col ? 'is-hover-dismissed' : ''}`}
                   type="button"
                   aria-label={`Select recommended placement ${positionLabel(recommendation.center)}`}
-                  onMouseEnter={() => setHoveredPosition(recommendation.center)}
-                  onMouseLeave={() => setHoveredPosition(null)}
-                  onFocus={() => setHoveredPosition(recommendation.center)}
-                  onBlur={() => setHoveredPosition(null)}
-                  onClick={() => setSelectedPosition(recommendation.center)}
+                  onMouseEnter={() => {
+                    setDismissedHoverPosition(null)
+                    setHoveredPosition(recommendation.center)
+                  }}
+                  onMouseLeave={() => {
+                    setHoveredPosition(null)
+                    setDismissedHoverPosition(null)
+                  }}
+                  onFocus={() => {
+                    setDismissedHoverPosition(null)
+                    setHoveredPosition(recommendation.center)
+                  }}
+                  onBlur={() => {
+                    setHoveredPosition(null)
+                    setDismissedHoverPosition(null)
+                  }}
+                  onClick={() => toggleRecommendation(recommendation.center)}
                 >
                   <strong>{positionLabel(recommendation.center)}</strong>
                   <p>{recommendation.explanation}</p>
@@ -459,14 +512,26 @@ function App() {
                 <div className="alternative-candidates">
                   {recommendations.slice(1, 4).map((candidate, index) => (
                     <button
-                      className="alternative-row"
+                      className={`alternative-row ${selectedPosition?.row === candidate.center.row && selectedPosition.col === candidate.center.col ? 'is-selected' : ''} ${dismissedHoverPosition?.row === candidate.center.row && dismissedHoverPosition.col === candidate.center.col ? 'is-hover-dismissed' : ''}`}
                       type="button"
                       key={`${candidate.center.row}-${candidate.center.col}`}
-                      onMouseEnter={() => setHoveredPosition(candidate.center)}
-                      onMouseLeave={() => setHoveredPosition(null)}
-                      onFocus={() => setHoveredPosition(candidate.center)}
-                      onBlur={() => setHoveredPosition(null)}
-                      onClick={() => setSelectedPosition(candidate.center)}
+                      onMouseEnter={() => {
+                        setDismissedHoverPosition(null)
+                        setHoveredPosition(candidate.center)
+                      }}
+                      onMouseLeave={() => {
+                        setHoveredPosition(null)
+                        setDismissedHoverPosition(null)
+                      }}
+                      onFocus={() => {
+                        setDismissedHoverPosition(null)
+                        setHoveredPosition(candidate.center)
+                      }}
+                      onBlur={() => {
+                        setHoveredPosition(null)
+                        setDismissedHoverPosition(null)
+                      }}
+                      onClick={() => toggleRecommendation(candidate.center)}
                     >
                       <span className="alternative-rank">0{index + 2}</span>
                       <span className="alternative-position">{positionLabel(candidate.center)}</span>

@@ -19,6 +19,19 @@ export type Position = {
   col: number
 }
 
+export const getPlacementCenter = (
+  pieceType: PieceType,
+  anchor: Position,
+): Position => {
+  if (pieceType === 'horizontal') {
+    return { row: anchor.row, col: Math.floor(BOARD_SIZE / 2) }
+  }
+  if (pieceType === 'vertical') {
+    return { row: Math.floor(BOARD_SIZE / 2), col: anchor.col }
+  }
+  return anchor
+}
+
 export const createEmptyBoard = (): Board =>
   Array.from({ length: BOARD_SIZE }, () =>
     Array<boolean>(BOARD_SIZE).fill(false),
@@ -217,75 +230,87 @@ export const rankPlacements = (
   pieceType: PieceType,
 ): PlacementCandidate[] => {
   const candidates: PlacementCandidate[] = []
+  const centers = pieceType === 'horizontal'
+    ? Array.from({ length: BOARD_SIZE }, (_, row) => ({
+      row,
+      col: Math.floor(BOARD_SIZE / 2),
+    }))
+    : pieceType === 'vertical'
+      ? Array.from({ length: BOARD_SIZE }, (_, col) => ({
+        row: Math.floor(BOARD_SIZE / 2),
+        col,
+      }))
+      : Array.from({ length: BOARD_SIZE * BOARD_SIZE }, (_, index) => ({
+        row: Math.floor(index / BOARD_SIZE),
+        col: index % BOARD_SIZE,
+      }))
   const completedBefore = new Set(
     getCompletedLines(board).map((line) => line.id),
   )
 
-  for (let row = 0; row < BOARD_SIZE; row += 1) {
-    for (let col = 0; col < BOARD_SIZE; col += 1) {
-      const center = { row, col }
-      if (!canPlacePiece(pieceType, center)) continue
+  for (const center of centers) {
+    const { row, col } = center
+    if (!canPlacePiece(pieceType, center)) continue
 
-      const nextBoard = placePiece(board, pieceType, center)
-      const coveredOffsets = PIECES[pieceType].filter(({ row: rowOffset, col: colOffset }) => {
-        const nextRow = row + rowOffset
-        const nextCol = col + colOffset
-        return nextRow >= 0 && nextRow < BOARD_SIZE && nextCol >= 0 && nextCol < BOARD_SIZE
-      })
-      const newCells = coveredOffsets.filter(
-        ({ row: rowOffset, col: colOffset }) => !board[row + rowOffset][col + colOffset],
-      ).length
-      const overlaps = coveredOffsets.length - newCells
-      const completedLines = getCompletedLines(nextBoard).filter(
-        (line) => !completedBefore.has(line.id),
-      )
-      let score = newCells * 0.08
+    const nextBoard = placePiece(board, pieceType, center)
+    const coveredOffsets = PIECES[pieceType].filter(({ row: rowOffset, col: colOffset }) => {
+      const nextRow = row + rowOffset
+      const nextCol = col + colOffset
+      return nextRow >= 0 && nextRow < BOARD_SIZE && nextCol >= 0 && nextCol < BOARD_SIZE
+    })
+    const newCells = coveredOffsets.filter(
+      ({ row: rowOffset, col: colOffset }) => !board[row + rowOffset][col + colOffset],
+    ).length
+    const overlaps = coveredOffsets.length - newCells
+    const completedLines = getCompletedLines(nextBoard).filter(
+      (line) => !completedBefore.has(line.id),
+    )
+    let score = newCells * 0.08
 
-      let focusLine: BingoLine | null = null
-      let focusProgress = 0
-      let focusValue = -1
+    let focusLine: BingoLine | null = null
+    let focusProgress = 0
+    let focusValue = -1
 
-      for (const line of BINGO_LINES) {
-        const before = countLineCells(board, line)
-        if (before === BOARD_SIZE) continue
+    for (const line of BINGO_LINES) {
+      const before = countLineCells(board, line)
+      if (before === BOARD_SIZE) continue
 
-        const after = countLineCells(nextBoard, line)
-        const added = after - before
-        if (added === 0) continue
+      const after = countLineCells(nextBoard, line)
+      const added = after - before
+      if (added === 0) continue
 
-        const affinity = getPieceAffinity(pieceType, line)
-        if (after === BOARD_SIZE) {
-          score += line.weight * 18 * affinity
-        } else {
-          score += line.weight * added * (0.45 + before / BOARD_SIZE) * affinity
-          const value = line.weight * added * (0.6 + before / BOARD_SIZE)
-          if (value > focusValue) {
-            focusValue = value
-            focusLine = line
-            focusProgress = after
-          }
+      const affinity = getPieceAffinity(pieceType, line)
+      if (after === BOARD_SIZE) {
+        score += line.weight * 18 * affinity
+      } else {
+        score += line.weight * added * (0.45 + before / BOARD_SIZE) * affinity
+        const value = line.weight * added * (0.6 + before / BOARD_SIZE)
+        if (value > focusValue) {
+          focusValue = value
+          focusLine = line
+          focusProgress = after
         }
       }
+    }
 
-      for (const line of completedLines) {
-        score += line.weight * 4
-      }
+    for (const line of completedLines) {
+      score += line.weight * 4
+    }
 
-      candidates.push({
-        center,
-        score,
-        newCells,
-        overlaps,
+    candidates.push({
+      center,
+      score,
+      newCells,
+      overlaps,
+      completedLines,
+      focusLine,
+      focusProgress,
+      explanation: formatExplanation(
         completedLines,
         focusLine,
         focusProgress,
-        explanation: formatExplanation(
-          completedLines,
-          focusLine,
-          focusProgress,
-        ),
-      })
-    }
+      ),
+    })
   }
 
   return candidates.sort(
