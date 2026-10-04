@@ -165,6 +165,12 @@ function App() {
     ? rankPlacements(board, pieceType, pieceRates, priorityWeights)
     : []
   const recommendation = recommendations[0] ?? null
+  const storedRecommendation = pieceType && slotPieceType
+    ? rankPlacements(board, slotPieceType, pieceRates, priorityWeights)[0] ?? null
+    : null
+  const shouldSwapForImmediateValue = Boolean(
+    recommendation && storedRecommendation && storedRecommendation.score > recommendation.score,
+  )
   const activePosition =
     cursorPosition ?? hoveredPosition ?? selectedPosition ?? null
   const isAutomaticSuggestion = cursorPosition === null
@@ -816,6 +822,21 @@ function App() {
                   <div><strong>{recommendation.overlaps}</strong><span>overlaps</span></div>
                   <div><strong>{recommendation.completedLines.length}</strong><span>bingos</span></div>
                 </div>
+                {pieceType && slotPieceType && storedRecommendation && (
+                  <>
+                    <p className="stored-piece-context">
+                      {shouldSwapForImmediateValue
+                        ? `Swap in ${PIECE_OPTIONS.find((option) => option.type === slotPieceType)?.name}: it has the stronger placement on this board. Your ${PIECE_OPTIONS.find((option) => option.type === pieceType)?.name} will stay stored for later.`
+                        : `Keep ${PIECE_OPTIONS.find((option) => option.type === pieceType)?.name} in hand: it has the stronger placement on this board. The stored ${PIECE_OPTIONS.find((option) => option.type === slotPieceType)?.name} remains available for later.`}
+                      {' '}Future board flexibility is not simulated.
+                    </p>
+                    {shouldSwapForImmediateValue && (
+                      <button className="swap-button" type="button" onClick={swapSlot}>
+                        Swap to stored piece
+                      </button>
+                    )}
+                  </>
+                )}
                 <button
                   className="primary-button"
                   type="button"
@@ -825,7 +846,7 @@ function App() {
                   Place at {activePosition ? positionLabel(activePosition) : '—'}
                   <span aria-hidden="true">→</span>
                 </button>
-                {slotPieceType && (
+                {slotPieceType && !pieceType && (
                   <p className="stored-piece-context">
                     Stored {PIECE_OPTIONS.find((option) => option.type === slotPieceType)?.name} can be swapped in before placing.
                   </p>
