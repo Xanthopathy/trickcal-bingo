@@ -21,12 +21,16 @@ const LETTERS = 'ABCDEFG'.split('')
 const PIECE_OPTIONS: { type: PieceType; name: string }[] = [
   { type: 'plus', name: 'Plus' },
   { type: 'cross', name: 'Cross' },
-  { type: 'square', name: 'Square' },
+  { type: 'square', name: '3×3 square' },
   { type: 'horizontal', name: 'Horizontal' },
   { type: 'vertical', name: 'Vertical' },
 ]
 
-type SavedState = { board: Board; pieceType: PieceType }
+type SavedState = {
+  board: Board
+  pieceType: PieceType | null
+  slotPieceType: PieceType | null
+}
 
 const isBoard = (value: unknown): value is Board =>
   Array.isArray(value) &&
@@ -44,7 +48,9 @@ const isPieceType = (value: unknown): value is PieceType =>
 const readSavedState = (): SavedState => {
   try {
     const saved = window.localStorage.getItem(STORAGE_KEY)
-    if (!saved) return { board: createEmptyBoard(), pieceType: 'cross' }
+    if (!saved) {
+      return { board: createEmptyBoard(), pieceType: 'cross', slotPieceType: null }
+    }
 
     const parsed: unknown = JSON.parse(saved)
     if (
@@ -53,22 +59,29 @@ const readSavedState = (): SavedState => {
       'board' in parsed &&
       'pieceType' in parsed &&
       isBoard(parsed.board) &&
-      isPieceType(parsed.pieceType)
+      (isPieceType(parsed.pieceType) || parsed.pieceType === null)
     ) {
-      return { board: parsed.board, pieceType: parsed.pieceType }
+      return {
+        board: parsed.board,
+        pieceType: parsed.pieceType,
+        slotPieceType:
+          'slotPieceType' in parsed && isPieceType(parsed.slotPieceType)
+            ? parsed.slotPieceType
+            : null,
+      }
     }
   } catch {
-    return { board: createEmptyBoard(), pieceType: 'cross' }
+    return { board: createEmptyBoard(), pieceType: 'cross', slotPieceType: null }
   }
 
-  return { board: createEmptyBoard(), pieceType: 'cross' }
+  return { board: createEmptyBoard(), pieceType: 'cross', slotPieceType: null }
 }
 
 const positionLabel = ({ row, col }: Position): string =>
   `${LETTERS[col]}${row + 1}`
 
 const PieceIcon = ({ pieceType }: { pieceType: PieceType }) => (
-  <span className="piece-icon-grid" aria-hidden="true">
+  <span className={`piece-icon-grid piece-icon-${pieceType}`} aria-hidden="true">
     {Array.from({ length: BOARD_SIZE * BOARD_SIZE }, (_, index) => {
       const row = Math.floor(index / BOARD_SIZE) - 3
       const col = (index % BOARD_SIZE) - 3
@@ -76,12 +89,7 @@ const PieceIcon = ({ pieceType }: { pieceType: PieceType }) => (
         (offset) => offset.row === row && offset.col === col,
       )
 
-      return (
-        <i
-          className={filled ? 'piece-icon-cell is-filled' : 'piece-icon-cell'}
-          key={index}
-        />
-      )
+      return <i className={filled ? 'piece-icon-cell is-filled' : 'piece-icon-cell'} key={index} />
     })}
   </span>
 )
@@ -89,16 +97,19 @@ const PieceIcon = ({ pieceType }: { pieceType: PieceType }) => (
 function App() {
   const [savedState] = useState(readSavedState)
   const [board, setBoard] = useState(savedState.board)
-  const [pieceType, setPieceType] = useState(savedState.pieceType)
+  const [pieceType, setPieceType] = useState<PieceType | null>(savedState.pieceType)
+  const [slotPieceType, setSlotPieceType] = useState<PieceType | null>(savedState.slotPieceType)
   const [history, setHistory] = useState<Board[]>([])
   const [hoveredPosition, setHoveredPosition] = useState<Position | null>(null)
   const [selectedPosition, setSelectedPosition] = useState<Position | null>(null)
   const boardGridRef = useRef<HTMLDivElement>(null)
 
-  const recommendations = rankPlacements(board, pieceType)
+  const recommendations = pieceType ? rankPlacements(board, pieceType) : []
   const recommendation = recommendations[0] ?? null
   const activePosition =
     hoveredPosition ?? selectedPosition ?? recommendation?.center ?? null
+  const isAutomaticSuggestion =
+    hoveredPosition === null && selectedPosition === null
   const completedLines = getCompletedLines(board)
   const coveredCount = board.reduce(
     (total, row) => total + row.filter(Boolean).length,
@@ -119,12 +130,12 @@ function App() {
     try {
       window.localStorage.setItem(
         STORAGE_KEY,
-        JSON.stringify({ board, pieceType }),
+        JSON.stringify({ board, pieceType, slotPieceType }),
       )
     } catch {
       // Continue using the board if browser storage is unavailable.
     }
-  }, [board, pieceType])
+  }, [board, pieceType, slotPieceType])
 
   useEffect(() => {
     const boardGrid = boardGridRef.current
@@ -142,8 +153,9 @@ function App() {
         const currentIndex = PIECE_OPTIONS.findIndex(
           (option) => option.type === current,
         )
-        const nextIndex =
-          (currentIndex + direction + PIECE_OPTIONS.length) % PIECE_OPTIONS.length
+        const nextIndex = currentIndex < 0
+          ? direction > 0 ? 0 : PIECE_OPTIONS.length - 1
+          : (currentIndex + direction + PIECE_OPTIONS.length) % PIECE_OPTIONS.length
         return PIECE_OPTIONS[nextIndex].type
       })
       setHoveredPosition(null)
@@ -155,7 +167,7 @@ function App() {
   }, [])
 
   const commitPlacement = (center: Position | null) => {
-    if (!center) return
+    if (!center || !pieceType) return
     setHistory((previous) => [...previous, board].slice(-30))
     setBoard(placePiece(board, pieceType, center))
     setHoveredPosition(null)
@@ -171,16 +183,29 @@ function App() {
     setSelectedPosition(null)
   }
 
-  const clearBoard = () => {
-    if (coveredCount === 0) return
-    setHistory((previous) => [...previous, board].slice(-30))
+  const startNewBoard = () => {
     setBoard(createEmptyBoard())
+    setPieceType('cross')
+    setSlotPieceType(null)
+    setHistory([])
+    setHoveredPosition(null)
+    setSelectedPosition(null)
+  }
+
+  const swapSlot = () => {
+    if (slotPieceType) {
+      setPieceType(slotPieceType)
+      setSlotPieceType(pieceType)
+    } else if (pieceType) {
+      setSlotPieceType(pieceType)
+      setPieceType(null)
+    }
     setHoveredPosition(null)
     setSelectedPosition(null)
   }
 
   const previewCells = new Map<string, boolean>()
-  if (activePosition && canPlacePiece(pieceType, activePosition)) {
+  if (pieceType && activePosition && canPlacePiece(pieceType, activePosition)) {
     for (const offset of PIECES[pieceType]) {
       const row = activePosition.row + offset.row
       const col = activePosition.col + offset.col
@@ -194,68 +219,112 @@ function App() {
   return (
     <main className="app-shell">
       <header className="topbar">
-        <a className="brand" href="#top" aria-label="Bingo Buddy home">
+        <a className="brand" href="#top" aria-label="Bingo board home">
           <span className="brand-mark" aria-hidden="true">✿</span>
-          <span className="brand-copy">
-            <strong>TRICKCAL BINGO</strong>
-          </span>
+          <span className="brand-copy"><strong>TRICKCAL BINGO</strong></span>
         </a>
-        <span className="local-badge">
-          <span className="status-dot" /> Saved in this browser
-        </span>
+        <span className="local-badge"><span className="status-dot" /> Saved in this browser</span>
       </header>
 
-      <section className="page-heading" id="top">
-        <div>
-          <p className="eyebrow">ADAPTIVE PLAYGROUND <span>·</span> BOARD 01</p>
-        </div>
-        <div className="quick-stats" aria-label="Board summary">
-          <div className="quick-stat">
-            <strong>{coveredCount}<span> / 49</span></strong>
-            <span>tiles covered</span>
-          </div>
-          <div className="quick-stat">
-            <strong>{completedLines.length}<span> / 16</span></strong>
-            <span>bingos</span>
-          </div>
-        </div>
-      </section>
-
-      <div
-        className="skip-progress"
-        aria-label={`${coveredCount} of ${SKIP_ESTIMATE} estimated tiles covered toward skip threshold`}
-      >
-        <div className="skip-progress-track">
-          <span style={{ width: `${Math.min(coveredCount / SKIP_ESTIMATE, 1) * 100}%` }} />
-          <i style={{ left: `${(SKIP_ESTIMATE / 49) * 100}%` }} />
-        </div>
-        <div className="skip-progress-labels">
-          <span>{coveredCount >= SKIP_ESTIMATE ? 'Skip point reached!' : 'Tiles until estimated skip point'}</span>
-          <span>{coveredCount} / {SKIP_ESTIMATE} <small>estimated</small></span>
-        </div>
-      </div>
-
       <section className="workspace">
-        <div className="board-section">
+        <aside className="analysis-column analysis-left" aria-label="Piece controls">
+          <section className="analysis-heading">
+            <p className="eyebrow">PIECE CONTROL</p>
+            <h1>Available pieces</h1>
+          </section>
+
+          <section className="piece-section">
+            <div className="panel-heading">
+              <h2>Piece in hand</h2>
+              {pieceType && <span className="piece-name">{PIECE_OPTIONS.find((option) => option.type === pieceType)?.name}</span>}
+            </div>
+            <div className="piece-picker" role="group" aria-label="Piece in hand">
+              {PIECE_OPTIONS.map((option) => (
+                <button
+                  className={`piece-option piece-${option.type} ${pieceType === option.type ? 'selected' : ''}`}
+                  type="button"
+                  key={option.type}
+                  aria-pressed={pieceType === option.type}
+                  aria-label={option.name}
+                  title={option.name}
+                  onClick={() => {
+                    setPieceType(option.type)
+                    setHoveredPosition(null)
+                    setSelectedPosition(null)
+                  }}
+                >
+                  <PieceIcon pieceType={option.type} />
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <section className="slot-section">
+            <div className="panel-heading">
+              <h2>Storage slot</h2>
+              <span className="slot-state">{slotPieceType ? 'Occupied' : 'Empty'}</span>
+            </div>
+            <div className="slot-controls">
+              <div className={`slot-display ${slotPieceType ? 'has-piece' : ''}`}>
+                {slotPieceType ? (
+                  <PieceIcon pieceType={slotPieceType} />
+                ) : (
+                  <span className="slot-empty-mark" aria-hidden="true">+</span>
+                )}
+              </div>
+              <div className="slot-copy">
+                <strong>{slotPieceType ? PIECE_OPTIONS.find((option) => option.type === slotPieceType)?.name : 'No stored piece'}</strong>
+                <span>{slotPieceType ? 'Ready to swap into hand' : 'Store the current piece here'}</span>
+              </div>
+              <button
+                className="swap-button"
+                type="button"
+                disabled={!pieceType && !slotPieceType}
+                onClick={swapSlot}
+              >
+                {!slotPieceType ? 'Store' : pieceType ? 'Swap' : 'Retrieve'}
+              </button>
+            </div>
+            <p className="slot-note">Swapping is free. The slot resets on Skip or Restart.</p>
+          </section>
+
+          <div className="control-note">
+            Scroll over the board to cycle the hand piece.
+          </div>
+        </aside>
+
+        <section className="board-section" aria-label="Bingo board controls">
           <div className="board-toolbar">
             <div>
-              <p className="section-kicker">YOUR BOARD</p>
+              <p className="section-kicker">BOARD STATE</p>
+              <h2>7 × 7 grid</h2>
             </div>
             <div className="board-actions">
               <button className="text-button" type="button" onClick={undo} disabled={history.length === 0}>
                 Undo
               </button>
-              <button className="text-button clear-button" type="button" onClick={clearBoard} disabled={coveredCount === 0}>
-                Clear
+              <button
+                className="text-button skip-button"
+                type="button"
+                onClick={startNewBoard}
+                disabled={coveredCount < SKIP_ESTIMATE}
+                title={coveredCount < SKIP_ESTIMATE ? `Available at ${SKIP_ESTIMATE} covered tiles` : 'Start a new board'}
+              >
+                Skip
+              </button>
+              <button
+                className="text-button restart-button"
+                type="button"
+                onClick={startNewBoard}
+                disabled={coveredCount === 0 && slotPieceType === null && pieceType === 'cross'}
+              >
+                Restart
               </button>
             </div>
           </div>
 
           <div className="board-shell">
-            <span className="axis-corner" aria-hidden="true">·</span>
-            <div className="column-labels" aria-hidden="true">
-              {LETTERS.map((letter) => <span key={letter}>{letter}</span>)}
-            </div>
+            <span className="axis-corner" aria-hidden="true"></span>
             <div className="row-labels" aria-hidden="true">
               {Array.from({ length: BOARD_SIZE }, (_, index) => <span key={index}>{index + 1}</span>)}
             </div>
@@ -269,8 +338,16 @@ function App() {
                   const cellClass = [
                     'board-cell',
                     covered ? 'is-covered' : '',
-                    preview === false ? 'is-preview-new' : '',
-                    preview === true ? 'is-preview-overlap' : '',
+                    preview === false
+                      ? isAutomaticSuggestion
+                        ? 'is-suggested-new'
+                        : 'is-preview-new'
+                      : '',
+                    preview === true
+                      ? isAutomaticSuggestion
+                        ? 'is-suggested-overlap'
+                        : 'is-preview-overlap'
+                      : '',
                     isRecommended ? 'is-recommendation-anchor' : '',
                   ].filter(Boolean).join(' ')
 
@@ -293,55 +370,59 @@ function App() {
                 }),
               )}
             </div>
+            <div className="column-labels" aria-hidden="true">
+              {LETTERS.map((letter) => <span key={letter}>{letter}</span>)}
+            </div>
           </div>
 
           <div className="board-legend" aria-label="Board legend">
             <span><i className="legend-covered" /> Covered</span>
-            <span><i className="legend-new" /> New tile</span>
-            <span><i className="legend-overlap" /> Already covered</span>
+            <span><i className="legend-new" /> Selected preview</span>
+            <span><i className="legend-suggested" /> Recommendation</span>
+            <span><i className="legend-overlap" /> Overlap</span>
           </div>
-          <p className="board-hint">Click to preview <b>·</b> Double-click to place <b>·</b> Scroll here to switch pieces</p>
-        </div>
+          <p className="board-hint">Click to preview · Double-click to place</p>
+        </section>
 
-        <aside className="strategy-panel">
-          <section className="piece-section">
-            <div className="panel-heading">
-              <div>
-                <p className="section-kicker">YOUR PIECE</p>
-                <h2>Who's up?</h2>
+        <aside className="analysis-column analysis-right" aria-label="Board analysis">
+          <section className="analysis-heading" id="top">
+            <div>
+              <p className="eyebrow">BOARD ANALYSIS</p>
+              <h1>Current run</h1>
+            </div>
+            <div className="quick-stats" aria-label="Board summary">
+              <div className="quick-stat">
+                <strong>{coveredCount}<span> / 49</span></strong>
+                <span>tiles covered</span>
+              </div>
+              <div className="quick-stat">
+                <strong>{completedLines.length}<span> / 16</span></strong>
+                <span>bingos</span>
               </div>
             </div>
-            <div className="piece-picker" role="group" aria-label="Piece type">
-              {PIECE_OPTIONS.map((option) => (
-                <button
-                  className={`piece-option piece-${option.type} ${pieceType === option.type ? 'selected' : ''}`}
-                  type="button"
-                  key={option.type}
-                  aria-pressed={pieceType === option.type}
-                  aria-label={option.name}
-                  title={option.name}
-                  onClick={() => {
-                    setPieceType(option.type)
-                    setHoveredPosition(null)
-                    setSelectedPosition(null)
-                  }}
-                >
-                  <PieceIcon pieceType={option.type} />
-                </button>
-              ))}
-            </div>
           </section>
+
+          <div className="skip-progress" aria-label={`${coveredCount} of ${SKIP_ESTIMATE} tiles covered toward skip threshold`}>
+            <div className="skip-progress-track">
+              <span style={{ width: `${Math.min(coveredCount / SKIP_ESTIMATE, 1) * 100}%` }} />
+              <i style={{ left: `${(SKIP_ESTIMATE / 49) * 100}%` }} />
+            </div>
+            <div className="skip-progress-labels">
+              <span>Skip threshold</span>
+              <span>{coveredCount} / {SKIP_ESTIMATE}</span>
+            </div>
+          </div>
 
           <section className="recommendation-section" aria-live="polite">
             <div className="panel-heading recommendation-heading">
               <div>
-                <p className="section-kicker">SMART SUGGESTION</p>
-                <h2>Best next spot</h2>
+                <p className="section-kicker">ADAPTIVE HEURISTIC</p>
+                <h2>Recommended placement</h2>
               </div>
               <span className="recommendation-tag">TOP PICK</span>
             </div>
 
-            {recommendation ? (
+            {recommendation && pieceType ? (
               <>
                 <div className="recommended-move">
                   <strong>{positionLabel(recommendation.center)}</strong>
@@ -349,7 +430,7 @@ function App() {
                 </div>
                 <div className="move-facts">
                   <div><strong>{recommendation.newCells}</strong><span>new tiles</span></div>
-                  <div><strong>{recommendation.overlaps}</strong><span>overlap</span></div>
+                  <div><strong>{recommendation.overlaps}</strong><span>overlaps</span></div>
                   <div><strong>{recommendation.completedLines.length}</strong><span>bingos</span></div>
                 </div>
                 <button
@@ -361,19 +442,19 @@ function App() {
                   Place at {activePosition ? positionLabel(activePosition) : '—'}
                   <span aria-hidden="true">→</span>
                 </button>
-                {activePosition && (activePosition.row !== recommendation.center.row || activePosition.col !== recommendation.center.col) && (
-                  <button className="text-button use-recommendation" type="button" onClick={() => setSelectedPosition(recommendation.center)}>
-                    Back to top spot ({positionLabel(recommendation.center)})
-                  </button>
+                {slotPieceType && (
+                  <p className="stored-piece-context">
+                    Stored {PIECE_OPTIONS.find((option) => option.type === slotPieceType)?.name} can be swapped in before placing.
+                  </p>
                 )}
               </>
             ) : (
-              <p className="empty-note">No legal placement for this piece.</p>
+              <p className="empty-note">Select a piece in hand to calculate recommendations.</p>
             )}
 
             {recommendations.length > 1 && (
               <div className="alternatives">
-                <p className="alternatives-title">More good spots</p>
+                <p className="alternatives-title">Alternative candidates</p>
                 {recommendations.slice(1, 4).map((candidate, index) => (
                   <button
                     className="alternative-row"
@@ -398,8 +479,8 @@ function App() {
           <section className="lines-section">
             <div className="panel-heading">
               <div>
-                <p className="section-kicker">LINE STATUS</p>
-                <h2>{completedLines.length > 0 ? `${completedLines.length} bingos complete` : 'Bingo progress'}</h2>
+                <p className="section-kicker">BINGO LINES</p>
+                <h2>{completedLines.length > 0 ? `${completedLines.length} completed` : 'Line progress'}</h2>
               </div>
               <span className="line-count">{completedLines.length}/16</span>
             </div>
@@ -418,14 +499,14 @@ function App() {
                 ))}
               </ul>
             ) : completedLines.length === 0 ? (
-              <p className="empty-note">Place a piece to start building lines.</p>
+              <p className="empty-note">No line progress yet.</p>
             ) : null}
           </section>
         </aside>
       </section>
 
       <footer className="page-footer">
-        <span>Adaptive line heuristic <i>·</i> Prototype</span>
+        <span>Adaptive line heuristic · Prototype</span>
         <span>Weights are experimental, not proof of an optimal strategy.</span>
       </footer>
     </main>

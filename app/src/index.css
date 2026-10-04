@@ -1,11 +1,12 @@
 :root {
-  --ink: #5c4e59;
-  --muted: #887b87;
-  --line: #f0e3dc;
-  --pine: #69b791;
-  --pine-light: #87cda7;
-  --coral: #ef927f;
-  --canvas: #fffaf3;
+  --ink: #f5fff7;
+  --muted: #d0dbd2;
+  --line: #29352d;
+  --pine: #4bd181;
+  --pine-light: #4bd181;
+  --coral: #f2a796;
+  --canvas: #050706;
+  color-scheme: dark;
   --sans: 'Trebuchet MS', 'Segoe UI', sans-serif;
 
   font-family: var(--sans);
@@ -33,7 +34,7 @@ button {
 
 button:focus-visible,
 a:focus-visible {
-  outline: 2px solid #c16d57;
+  outline: 2px solid #f1c985;
   outline-offset: 2px;
 }
 
