@@ -227,11 +227,34 @@ function App() {
       </header>
 
       <section className="workspace">
-        <aside className="analysis-column analysis-left" aria-label="Piece controls">
-          <section className="analysis-heading">
-            <p className="eyebrow">PIECE CONTROL</p>
-            <h1>Available pieces</h1>
+        <aside className="analysis-column piece-controls" aria-label="Piece controls">
+          <section className="analysis-heading" id="top">
+            <div>
+              <p className="eyebrow">BOARD ANALYSIS</p>
+              <h1>Current run</h1>
+            </div>
+            <div className="quick-stats" aria-label="Board summary">
+              <div className="quick-stat">
+                <strong>{coveredCount}<span> / 49</span></strong>
+                <span>tiles covered</span>
+              </div>
+              <div className="quick-stat">
+                <strong>{completedLines.length}<span> / 16</span></strong>
+                <span>bingos</span>
+              </div>
+            </div>
           </section>
+
+          <div className="skip-progress" aria-label={`${coveredCount} of ${SKIP_ESTIMATE} tiles covered toward skip threshold`}>
+            <div className="skip-progress-track">
+              <span style={{ width: `${Math.min(coveredCount / SKIP_ESTIMATE, 1) * 100}%` }} />
+              <i style={{ left: `${(SKIP_ESTIMATE / 49) * 100}%` }} />
+            </div>
+            <div className="skip-progress-labels">
+              <span>Skip threshold</span>
+              <span>{coveredCount} / {SKIP_ESTIMATE}</span>
+            </div>
+          </div>
 
           <section className="piece-section">
             <div className="panel-heading">
@@ -285,12 +308,8 @@ function App() {
                 {!slotPieceType ? 'Store' : pieceType ? 'Swap' : 'Retrieve'}
               </button>
             </div>
-            <p className="slot-note">Swapping is free. The slot resets on Skip or Restart.</p>
           </section>
 
-          <div className="control-note">
-            Scroll over the board to cycle the hand piece.
-          </div>
         </aside>
 
         <section className="board-section" aria-label="Bingo board controls">
@@ -382,37 +401,10 @@ function App() {
             <span><i className="legend-overlap" /> Overlap</span>
           </div>
           <p className="board-hint">Click to preview · Double-click to place</p>
+          <p className="board-scroll-note">Scroll over the board to cycle the hand piece.</p>
         </section>
 
-        <aside className="analysis-column analysis-right" aria-label="Board analysis">
-          <section className="analysis-heading" id="top">
-            <div>
-              <p className="eyebrow">BOARD ANALYSIS</p>
-              <h1>Current run</h1>
-            </div>
-            <div className="quick-stats" aria-label="Board summary">
-              <div className="quick-stat">
-                <strong>{coveredCount}<span> / 49</span></strong>
-                <span>tiles covered</span>
-              </div>
-              <div className="quick-stat">
-                <strong>{completedLines.length}<span> / 16</span></strong>
-                <span>bingos</span>
-              </div>
-            </div>
-          </section>
-
-          <div className="skip-progress" aria-label={`${coveredCount} of ${SKIP_ESTIMATE} tiles covered toward skip threshold`}>
-            <div className="skip-progress-track">
-              <span style={{ width: `${Math.min(coveredCount / SKIP_ESTIMATE, 1) * 100}%` }} />
-              <i style={{ left: `${(SKIP_ESTIMATE / 49) * 100}%` }} />
-            </div>
-            <div className="skip-progress-labels">
-              <span>Skip threshold</span>
-              <span>{coveredCount} / {SKIP_ESTIMATE}</span>
-            </div>
-          </div>
-
+        <aside className="analysis-column board-analysis" aria-label="Board analysis">
           <section className="recommendation-section" aria-live="polite">
             <div className="panel-heading recommendation-heading">
               <div>
@@ -424,10 +416,19 @@ function App() {
 
             {recommendation && pieceType ? (
               <>
-                <div className="recommended-move">
+                <button
+                  className={`recommended-move ${selectedPosition?.row === recommendation.center.row && selectedPosition.col === recommendation.center.col ? 'is-selected' : ''}`}
+                  type="button"
+                  aria-label={`Select recommended placement ${positionLabel(recommendation.center)}`}
+                  onMouseEnter={() => setHoveredPosition(recommendation.center)}
+                  onMouseLeave={() => setHoveredPosition(null)}
+                  onFocus={() => setHoveredPosition(recommendation.center)}
+                  onBlur={() => setHoveredPosition(null)}
+                  onClick={() => setSelectedPosition(recommendation.center)}
+                >
                   <strong>{positionLabel(recommendation.center)}</strong>
                   <p>{recommendation.explanation}</p>
-                </div>
+                </button>
                 <div className="move-facts">
                   <div><strong>{recommendation.newCells}</strong><span>new tiles</span></div>
                   <div><strong>{recommendation.overlaps}</strong><span>overlaps</span></div>
@@ -455,23 +456,24 @@ function App() {
             {recommendations.length > 1 && (
               <div className="alternatives">
                 <p className="alternatives-title">Alternative candidates</p>
-                {recommendations.slice(1, 4).map((candidate, index) => (
-                  <button
-                    className="alternative-row"
-                    type="button"
-                    key={`${candidate.center.row}-${candidate.center.col}`}
-                    onMouseEnter={() => setHoveredPosition(candidate.center)}
-                    onMouseLeave={() => setHoveredPosition(null)}
-                    onFocus={() => setHoveredPosition(candidate.center)}
-                    onBlur={() => setHoveredPosition(null)}
-                    onClick={() => setSelectedPosition(candidate.center)}
-                  >
-                    <span className="alternative-rank">0{index + 2}</span>
-                    <span className="alternative-position">{positionLabel(candidate.center)}</span>
-                    <span className="alternative-summary">{candidate.completedLines.length > 0 ? `${candidate.completedLines.length} bingo${candidate.completedLines.length > 1 ? 's' : ''}` : `+${candidate.newCells} tiles`}</span>
-                    <span className="alternative-arrow" aria-hidden="true">↗</span>
-                  </button>
-                ))}
+                <div className="alternative-candidates">
+                  {recommendations.slice(1, 4).map((candidate, index) => (
+                    <button
+                      className="alternative-row"
+                      type="button"
+                      key={`${candidate.center.row}-${candidate.center.col}`}
+                      onMouseEnter={() => setHoveredPosition(candidate.center)}
+                      onMouseLeave={() => setHoveredPosition(null)}
+                      onFocus={() => setHoveredPosition(candidate.center)}
+                      onBlur={() => setHoveredPosition(null)}
+                      onClick={() => setSelectedPosition(candidate.center)}
+                    >
+                      <span className="alternative-rank">0{index + 2}</span>
+                      <span className="alternative-position">{positionLabel(candidate.center)}</span>
+                      <span className="alternative-summary">{candidate.completedLines.length > 0 ? `${candidate.completedLines.length} bingo${candidate.completedLines.length > 1 ? 's' : ''}` : `+${candidate.newCells} tiles`}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
           </section>
