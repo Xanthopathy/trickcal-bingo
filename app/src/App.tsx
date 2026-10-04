@@ -2,22 +2,27 @@ import { useEffect, useRef, useState } from 'react'
 import {
   BINGO_LINES,
   BOARD_SIZE,
+  DEFAULT_PIECE_RATES,
+  DEFAULT_PRIORITY_WEIGHTS,
   PIECES,
   canPlacePiece,
   countLineCells,
   createEmptyBoard,
+  getEffectiveLineWeight,
   getPlacementCenter,
   getCompletedLines,
   placePiece,
   rankPlacements,
   type Board,
+  type PieceRates,
   type PieceType,
+  type PriorityWeights,
   type Position,
 } from './game'
 import './App.css'
 
 const STORAGE_KEY = 'bingo-adaptive-board-v1'
-const SKIP_ESTIMATE = 42
+const DEFAULT_SKIP_THRESHOLD = 42
 const LETTERS = 'ABCDEFG'.split('')
 const PIECE_OPTIONS: { type: PieceType; name: string }[] = [
   { type: 'plus', name: 'Plus' },
@@ -31,6 +36,9 @@ type SavedState = {
   board: Board
   pieceType: PieceType | null
   slotPieceType: PieceType | null
+  pieceRates: PieceRates
+  priorityWeights: PriorityWeights
+  skipThreshold: number
 }
 
 const isBoard = (value: unknown): value is Board =>
@@ -46,12 +54,35 @@ const isBoard = (value: unknown): value is Board =>
 const isPieceType = (value: unknown): value is PieceType =>
   PIECE_OPTIONS.some((option) => option.type === value)
 
+const isPieceRates = (value: unknown): value is PieceRates => {
+  if (typeof value !== 'object' || value === null) return false
+  const rates = value as Record<string, unknown>
+  return PIECE_OPTIONS.every(
+    ({ type }) => typeof rates[type] === 'number' && Number.isFinite(rates[type]) && rates[type] >= 0,
+  )
+}
+
+const isPriorityWeights = (value: unknown): value is PriorityWeights => {
+  if (typeof value !== 'object' || value === null) return false
+  const weights = value as Record<string, unknown>
+  return ['diagonal', 'priority', 'outer', 'other'].every(
+    (key) => typeof weights[key] === 'number' && Number.isFinite(weights[key]) && weights[key] >= 0,
+  )
+}
+
+const defaultSavedState = (): SavedState => ({
+  board: createEmptyBoard(),
+  pieceType: 'cross',
+  slotPieceType: null,
+  pieceRates: { ...DEFAULT_PIECE_RATES },
+  priorityWeights: { ...DEFAULT_PRIORITY_WEIGHTS },
+  skipThreshold: DEFAULT_SKIP_THRESHOLD,
+})
+
 const readSavedState = (): SavedState => {
   try {
     const saved = window.localStorage.getItem(STORAGE_KEY)
-    if (!saved) {
-      return { board: createEmptyBoard(), pieceType: 'cross', slotPieceType: null }
-    }
+    if (!saved) return defaultSavedState()
     const parsed: unknown = JSON.parse(saved)
     if (
       typeof parsed === 'object' &&
@@ -68,13 +99,29 @@ const readSavedState = (): SavedState => {
           'slotPieceType' in parsed && isPieceType(parsed.slotPieceType)
             ? parsed.slotPieceType
             : null,
+        pieceRates:
+          'pieceRates' in parsed && isPieceRates(parsed.pieceRates)
+            ? parsed.pieceRates
+            : { ...DEFAULT_PIECE_RATES },
+        priorityWeights:
+          'priorityWeights' in parsed && isPriorityWeights(parsed.priorityWeights)
+            ? parsed.priorityWeights
+            : { ...DEFAULT_PRIORITY_WEIGHTS },
+        skipThreshold:
+          'skipThreshold' in parsed &&
+            typeof parsed.skipThreshold === 'number' &&
+            Number.isInteger(parsed.skipThreshold) &&
+            parsed.skipThreshold >= 1 &&
+            parsed.skipThreshold <= BOARD_SIZE * BOARD_SIZE
+            ? parsed.skipThreshold
+            : DEFAULT_SKIP_THRESHOLD,
       }
     }
   } catch {
-    return { board: createEmptyBoard(), pieceType: 'cross', slotPieceType: null }
+    return defaultSavedState()
   }
 
-  return { board: createEmptyBoard(), pieceType: 'cross', slotPieceType: null }
+  return defaultSavedState()
 }
 
 const positionLabel = ({ row, col }: Position): string =>
@@ -99,18 +146,24 @@ function App() {
   const [board, setBoard] = useState(savedState.board)
   const [pieceType, setPieceType] = useState<PieceType | null>(savedState.pieceType)
   const [slotPieceType, setSlotPieceType] = useState<PieceType | null>(savedState.slotPieceType)
+  const [pieceRates, setPieceRates] = useState(savedState.pieceRates)
+  const [priorityWeights, setPriorityWeights] = useState(savedState.priorityWeights)
+  const [skipThreshold, setSkipThreshold] = useState(savedState.skipThreshold)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [history, setHistory] = useState<Board[]>([])
   const [hoveredPosition, setHoveredPosition] = useState<Position | null>(null)
   const [cursorPosition, setCursorPosition] = useState<Position | null>(null)
   const [selectedPosition, setSelectedPosition] = useState<Position | null>(() =>
     savedState.pieceType
-      ? rankPlacements(savedState.board, savedState.pieceType)[0]?.center ?? null
+      ? rankPlacements(savedState.board, savedState.pieceType, savedState.pieceRates, savedState.priorityWeights)[0]?.center ?? null
       : null,
   )
   const [dismissedHoverPosition, setDismissedHoverPosition] = useState<Position | null>(null)
   const boardGridRef = useRef<HTMLDivElement>(null)
 
-  const recommendations = pieceType ? rankPlacements(board, pieceType) : []
+  const recommendations = pieceType
+    ? rankPlacements(board, pieceType, pieceRates, priorityWeights)
+    : []
   const recommendation = recommendations[0] ?? null
   const activePosition =
     cursorPosition ?? hoveredPosition ?? selectedPosition ?? null
@@ -127,20 +180,22 @@ function App() {
     .filter(({ count }) => count > 0 && count < BOARD_SIZE)
     .sort(
       (left, right) =>
-        right.line.weight * right.count - left.line.weight * left.count,
+        getEffectiveLineWeight(right.line, pieceRates, priorityWeights) * right.count -
+        getEffectiveLineWeight(left.line, pieceRates, priorityWeights) * left.count,
     )
     .slice(0, 3)
+  const totalPieceRate = Object.values(pieceRates).reduce((total, rate) => total + rate, 0)
 
   useEffect(() => {
     try {
       window.localStorage.setItem(
         STORAGE_KEY,
-        JSON.stringify({ board, pieceType, slotPieceType }),
+        JSON.stringify({ board, pieceType, slotPieceType, pieceRates, priorityWeights, skipThreshold }),
       )
     } catch {
       // Continue using the board if browser storage is unavailable.
     }
-  }, [board, pieceType, slotPieceType])
+  }, [board, pieceType, slotPieceType, pieceRates, priorityWeights, skipThreshold])
 
   useEffect(() => {
     const boardGrid = boardGridRef.current
@@ -187,7 +242,7 @@ function App() {
       if (/^[1-5]$/.test(key)) {
         const nextPieceType = PIECE_OPTIONS[Number(key) - 1].type
         setPieceType(nextPieceType)
-        setSelectedPosition(rankPlacements(board, nextPieceType)[0]?.center ?? null)
+        setSelectedPosition(rankPlacements(board, nextPieceType, pieceRates, priorityWeights)[0]?.center ?? null)
         setCursorPosition(null)
         setHoveredPosition(null)
         setDismissedHoverPosition(null)
@@ -208,7 +263,7 @@ function App() {
         setPieceType(nextPieceType)
         setSlotPieceType(nextSlotPieceType)
         setSelectedPosition(
-          nextPieceType ? rankPlacements(board, nextPieceType)[0]?.center ?? null : null,
+          nextPieceType ? rankPlacements(board, nextPieceType, pieceRates, priorityWeights)[0]?.center ?? null : null,
         )
         setCursorPosition(null)
         setHoveredPosition(null)
@@ -223,7 +278,7 @@ function App() {
           setBoard(previousBoard)
           setHistory((previous) => previous.slice(0, -1))
           setSelectedPosition(
-            pieceType ? rankPlacements(previousBoard, pieceType)[0]?.center ?? null : null,
+            pieceType ? rankPlacements(previousBoard, pieceType, pieceRates, priorityWeights)[0]?.center ?? null : null,
           )
           setCursorPosition(null)
           setHoveredPosition(null)
@@ -239,7 +294,7 @@ function App() {
         setPieceType('cross')
         setSlotPieceType(null)
         setHistory([])
-        setSelectedPosition(rankPlacements(emptyBoard, 'cross')[0]?.center ?? null)
+        setSelectedPosition(rankPlacements(emptyBoard, 'cross', pieceRates, priorityWeights)[0]?.center ?? null)
         setCursorPosition(null)
         setHoveredPosition(null)
         setDismissedHoverPosition(null)
@@ -253,7 +308,7 @@ function App() {
           setHistory((previous) => [...previous, board].slice(-30))
           const nextBoard = placePiece(board, pieceType, center)
           setBoard(nextBoard)
-          setSelectedPosition(rankPlacements(nextBoard, pieceType)[0]?.center ?? null)
+          setSelectedPosition(rankPlacements(nextBoard, pieceType, pieceRates, priorityWeights)[0]?.center ?? null)
           setCursorPosition(null)
           setHoveredPosition(null)
           setDismissedHoverPosition(null)
@@ -270,7 +325,7 @@ function App() {
       }
       const candidateIndex = candidateIndexByKey[key]
       if (candidateIndex !== undefined && pieceType) {
-        const candidate = rankPlacements(board, pieceType)[candidateIndex]
+        const candidate = rankPlacements(board, pieceType, pieceRates, priorityWeights)[candidateIndex]
         if (candidate) {
           const isSelected =
             selectedPosition?.row === candidate.center.row &&
@@ -294,14 +349,14 @@ function App() {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [board, cursorPosition, history, hoveredPosition, pieceType, selectedPosition, slotPieceType])
+  }, [board, cursorPosition, history, hoveredPosition, pieceRates, pieceType, priorityWeights, selectedPosition, slotPieceType])
 
   const commitPlacement = (center: Position | null) => {
     if (!center || !pieceType) return
     setHistory((previous) => [...previous, board].slice(-30))
     const nextBoard = placePiece(board, pieceType, center)
     setBoard(nextBoard)
-    setSelectedPosition(rankPlacements(nextBoard, pieceType)[0]?.center ?? null)
+    setSelectedPosition(rankPlacements(nextBoard, pieceType, pieceRates, priorityWeights)[0]?.center ?? null)
     setCursorPosition(null)
     setHoveredPosition(null)
     setDismissedHoverPosition(null)
@@ -313,7 +368,7 @@ function App() {
     setBoard(previousBoard)
     setHistory((previous) => previous.slice(0, -1))
     setSelectedPosition(
-      pieceType ? rankPlacements(previousBoard, pieceType)[0]?.center ?? null : null,
+      pieceType ? rankPlacements(previousBoard, pieceType, pieceRates, priorityWeights)[0]?.center ?? null : null,
     )
     setCursorPosition(null)
     setHoveredPosition(null)
@@ -326,7 +381,7 @@ function App() {
     setPieceType('cross')
     setSlotPieceType(null)
     setHistory([])
-    setSelectedPosition(rankPlacements(emptyBoard, 'cross')[0]?.center ?? null)
+    setSelectedPosition(rankPlacements(emptyBoard, 'cross', pieceRates, priorityWeights)[0]?.center ?? null)
     setCursorPosition(null)
     setHoveredPosition(null)
     setDismissedHoverPosition(null)
@@ -347,7 +402,7 @@ function App() {
     setPieceType(nextPieceType)
     setSlotPieceType(nextSlotPieceType)
     setSelectedPosition(
-      nextPieceType ? rankPlacements(board, nextPieceType)[0]?.center ?? null : null,
+      nextPieceType ? rankPlacements(board, nextPieceType, pieceRates, priorityWeights)[0]?.center ?? null : null,
     )
     setCursorPosition(null)
     setHoveredPosition(null)
@@ -361,6 +416,63 @@ function App() {
     setSelectedPosition(isSelected ? null : center)
     setHoveredPosition(null)
     setDismissedHoverPosition(isSelected ? center : null)
+  }
+
+  const updatePieceRate = (updatedPiece: PieceType, value: number) => {
+    const nextRates = {
+      ...pieceRates,
+      [updatedPiece]: Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0)),
+    }
+    setPieceRates(nextRates)
+    setSelectedPosition(
+      pieceType
+        ? rankPlacements(board, pieceType, nextRates, priorityWeights)[0]?.center ?? null
+        : null,
+    )
+    setCursorPosition(null)
+    setHoveredPosition(null)
+    setDismissedHoverPosition(null)
+  }
+
+  const updatePriorityWeight = (key: keyof PriorityWeights, value: number) => {
+    const nextWeights = {
+      ...priorityWeights,
+      [key]: Math.max(0, Math.min(12, Number.isFinite(value) ? value : 0)),
+    }
+    setPriorityWeights(nextWeights)
+    setSelectedPosition(
+      pieceType
+        ? rankPlacements(board, pieceType, pieceRates, nextWeights)[0]?.center ?? null
+        : null,
+    )
+    setCursorPosition(null)
+    setHoveredPosition(null)
+    setDismissedHoverPosition(null)
+  }
+
+  const resetSiteData = () => {
+    const emptyBoard = createEmptyBoard()
+    const defaultRates = { ...DEFAULT_PIECE_RATES }
+    const defaultWeights = { ...DEFAULT_PRIORITY_WEIGHTS }
+    try {
+      window.localStorage.clear()
+    } catch {
+      // Continue with an in-memory reset when browser storage is unavailable.
+    }
+    setBoard(emptyBoard)
+    setPieceType('cross')
+    setSlotPieceType(null)
+    setPieceRates(defaultRates)
+    setPriorityWeights(defaultWeights)
+    setSkipThreshold(DEFAULT_SKIP_THRESHOLD)
+    setHistory([])
+    setSelectedPosition(
+      rankPlacements(emptyBoard, 'cross', defaultRates, defaultWeights)[0]?.center ?? null,
+    )
+    setCursorPosition(null)
+    setHoveredPosition(null)
+    setDismissedHoverPosition(null)
+    setSettingsOpen(false)
   }
 
   const previewCells = new Map<string, boolean>()
@@ -382,7 +494,97 @@ function App() {
           <span className="brand-mark" aria-hidden="true">✿</span>
           <span className="brand-copy"><strong>TRICKCAL BINGO</strong></span>
         </a>
-        <span className="local-badge"><span className="status-dot" /> Saved in this browser</span>
+        <div className="header-actions">
+          <span className="local-badge"><span className="status-dot" /> Saved in this browser</span>
+          <div className="settings-anchor">
+            <button
+              className="settings-button"
+              type="button"
+              aria-label="Settings"
+              aria-expanded={settingsOpen}
+              title="Settings"
+              onClick={() => setSettingsOpen((open) => !open)}
+            >
+              ⚙
+            </button>
+            {settingsOpen && (
+              <section className="settings-popover" role="dialog" aria-label="Prototype settings">
+                <div className="settings-heading">
+                  <div>
+                    <p className="section-kicker">TEST PARAMETERS</p>
+                    <h2>Settings</h2>
+                  </div>
+                  <button className="settings-close" type="button" aria-label="Close settings" onClick={() => setSettingsOpen(false)}>×</button>
+                </div>
+
+                <label className="setting-row">
+                  <span>Tiles to skip</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max="49"
+                    step="1"
+                    value={skipThreshold}
+                    onChange={(event) => setSkipThreshold(Math.max(1, Math.min(49, Math.round(Number(event.currentTarget.value) || 1))))}
+                  />
+                </label>
+
+                <div className="settings-group">
+                  <div className="settings-group-heading">
+                    <h3>Piece drop rates</h3>
+                    <span>{totalPieceRate}% total</span>
+                  </div>
+                  <p>Rates are normalized automatically when scoring.</p>
+                  {PIECE_OPTIONS.map((option) => (
+                    <label className="setting-row" key={option.type}>
+                      <span>{option.name}</span>
+                      <span className="setting-input-suffix">
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="1"
+                          value={pieceRates[option.type]}
+                          onChange={(event) => updatePieceRate(option.type, Number(event.currentTarget.value))}
+                        />
+                        <span>%</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+
+                <div className="settings-group">
+                  <div className="settings-group-heading">
+                    <h3>Heuristic priorities</h3>
+                    <span>Experimental</span>
+                  </div>
+                  {([
+                    ['diagonal', 'Diagonals'],
+                    ['priority', 'Row 4 / Column D'],
+                    ['outer', 'Outer rows / columns'],
+                    ['other', 'Other lines'],
+                  ] as const).map(([key, label]) => (
+                    <label className="setting-row" key={key}>
+                      <span>{label}</span>
+                      <input
+                        type="number"
+                        min="0"
+                        max="12"
+                        step="0.1"
+                        value={priorityWeights[key]}
+                        onChange={(event) => updatePriorityWeight(key, Number(event.currentTarget.value))}
+                      />
+                    </label>
+                  ))}
+                </div>
+
+                <button className="reset-data-button" type="button" onClick={resetSiteData}>
+                  Reset all site data
+                </button>
+              </section>
+            )}
+          </div>
+        </div>
       </header>
 
       <section className="workspace">
@@ -404,14 +606,14 @@ function App() {
             </div>
           </section>
 
-          <div className="skip-progress" aria-label={`${coveredCount} of ${SKIP_ESTIMATE} tiles covered toward skip threshold`}>
+          <div className="skip-progress" aria-label={`${coveredCount} of ${skipThreshold} tiles covered toward skip threshold`}>
             <div className="skip-progress-track">
-              <span style={{ width: `${Math.min(coveredCount / SKIP_ESTIMATE, 1) * 100}%` }} />
-              <i style={{ left: `${(SKIP_ESTIMATE / 49) * 100}%` }} />
+              <span style={{ width: `${Math.min(coveredCount / skipThreshold, 1) * 100}%` }} />
+              <i style={{ left: `${(skipThreshold / 49) * 100}%` }} />
             </div>
             <div className="skip-progress-labels">
               <span>Skip threshold</span>
-              <span>{coveredCount} / {SKIP_ESTIMATE}</span>
+              <span>{coveredCount} / {skipThreshold}</span>
             </div>
           </div>
 
@@ -431,7 +633,7 @@ function App() {
                   title={option.name}
                   onClick={() => {
                     setPieceType(option.type)
-                    setSelectedPosition(rankPlacements(board, option.type)[0]?.center ?? null)
+                    setSelectedPosition(rankPlacements(board, option.type, pieceRates, priorityWeights)[0]?.center ?? null)
                     setCursorPosition(null)
                     setHoveredPosition(null)
                     setDismissedHoverPosition(null)
@@ -491,8 +693,8 @@ function App() {
                 className="text-button skip-button"
                 type="button"
                 onClick={startNewBoard}
-                disabled={coveredCount < SKIP_ESTIMATE}
-                title={coveredCount < SKIP_ESTIMATE ? `Available at ${SKIP_ESTIMATE} covered tiles` : 'Start a new board'}
+                disabled={coveredCount < skipThreshold}
+                title={coveredCount < skipThreshold ? `Available at ${skipThreshold} covered tiles` : 'Start a new board'}
               >
                 Skip
               </button>

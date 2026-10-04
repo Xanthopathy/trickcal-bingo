@@ -19,6 +19,29 @@ export type Position = {
   col: number
 }
 
+export type PieceRates = Record<PieceType, number>
+export type PriorityWeights = {
+  diagonal: number
+  priority: number
+  outer: number
+  other: number
+}
+
+export const DEFAULT_PIECE_RATES: PieceRates = {
+  plus: 30,
+  cross: 30,
+  square: 10,
+  horizontal: 15,
+  vertical: 15,
+}
+
+export const DEFAULT_PRIORITY_WEIGHTS: PriorityWeights = {
+  diagonal: 6,
+  priority: 5,
+  outer: 2.2,
+  other: 1.6,
+}
+
 export const getPlacementCenter = (
   pieceType: PieceType,
   anchor: Position,
@@ -190,6 +213,49 @@ export const BINGO_LINES: BingoLine[] = [
   },
 ]
 
+export const getEffectiveLineWeight = (
+  line: BingoLine,
+  pieceRates: PieceRates = DEFAULT_PIECE_RATES,
+  priorityWeights: PriorityWeights = DEFAULT_PRIORITY_WEIGHTS,
+): number => {
+  const rateTotal = Object.values(pieceRates).reduce((sum, rate) => sum + rate, 0)
+  const rates = rateTotal > 0
+    ? Object.fromEntries(
+      Object.entries(pieceRates).map(([piece, rate]) => [piece, rate / rateTotal]),
+    ) as Record<PieceType, number>
+    : Object.fromEntries(
+      Object.entries(DEFAULT_PIECE_RATES).map(([piece, rate]) => [piece, rate / 100]),
+    ) as Record<PieceType, number>
+
+  const availability = line.kind === 'row'
+    ? rates.horizontal + rates.plus * 0.15 + rates.square * 0.1
+    : line.kind === 'column'
+      ? rates.vertical + rates.plus * 0.15 + rates.square * 0.1
+      : rates.cross + rates.plus * 0.25 + rates.square * 0.1
+  const defaultAvailability = line.kind === 'row'
+    ? 0.205
+    : line.kind === 'column'
+      ? 0.205
+      : 0.385
+  const availabilityAdjustment = Math.max(
+    0.7,
+    Math.min(1.3, 1 + (defaultAvailability - availability) * 1.25),
+  )
+  const isPriorityLine = line.id === 'row-3' || line.id === 'column-3'
+  const isOuterLine =
+    line.id === 'row-0' || line.id === 'row-6' ||
+    line.id === 'column-0' || line.id === 'column-6'
+  const priorityWeight = line.kind === 'diagonal'
+    ? priorityWeights.diagonal
+    : isPriorityLine
+      ? priorityWeights.priority
+      : isOuterLine
+        ? priorityWeights.outer
+        : priorityWeights.other
+
+  return priorityWeight * availabilityAdjustment
+}
+
 export const countLineCells = (board: Board, line: BingoLine): number =>
   line.cells.reduce(
     (count, { row, col }) => count + Number(board[row][col]),
@@ -228,6 +294,8 @@ const formatExplanation = (
 export const rankPlacements = (
   board: Board,
   pieceType: PieceType,
+  pieceRates: PieceRates = DEFAULT_PIECE_RATES,
+  priorityWeights: PriorityWeights = DEFAULT_PRIORITY_WEIGHTS,
 ): PlacementCandidate[] => {
   const candidates: PlacementCandidate[] = []
   const centers = pieceType === 'horizontal'
@@ -280,11 +348,12 @@ export const rankPlacements = (
       if (added === 0) continue
 
       const affinity = getPieceAffinity(pieceType, line)
+      const lineWeight = getEffectiveLineWeight(line, pieceRates, priorityWeights)
       if (after === BOARD_SIZE) {
-        score += line.weight * 18 * affinity
+        score += lineWeight * 18 * affinity
       } else {
-        score += line.weight * added * (0.45 + before / BOARD_SIZE) * affinity
-        const value = line.weight * added * (0.6 + before / BOARD_SIZE)
+        score += lineWeight * added * (0.45 + before / BOARD_SIZE) * affinity
+        const value = lineWeight * added * (0.6 + before / BOARD_SIZE)
         if (value > focusValue) {
           focusValue = value
           focusLine = line
@@ -294,7 +363,7 @@ export const rankPlacements = (
     }
 
     for (const line of completedLines) {
-      score += line.weight * 4
+      score += getEffectiveLineWeight(line, pieceRates, priorityWeights) * 4
     }
 
     candidates.push({
