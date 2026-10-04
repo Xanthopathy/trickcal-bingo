@@ -36,33 +36,33 @@ There are **16 possible bingo lines**:
 
 A bingo is completed when all seven cells in a line are occupied.
 
-### Bingo rewards (LVS = leaves, SC = star candy, CRTs = certificates)
+### Bingo rewards (LVs = leaves, SC = star candy, CRTs = certificates)
 
 Columns:
 
 | Line |  Reward |
 | ---- | ------: |
-| A    | ×10 LVS |
+| A    | ×10 LVs |
 | B    |  ×10 SC |
-| C    | ×10 LVS |
+| C    | ×10 LVs |
 | D    | ×5 CRTs |
-| E    | ×10 LVS |
+| E    | ×10 LVs |
 | F    |  ×10 SC |
-| G    | ×10 LVS |
+| G    | ×10 LVs |
 
 Rows:
 
 | Line |  Reward |
 | ---- | ------: |
-| 1    | ×10 LVS |
-| 2    | ×10 LVS |
+| 1    | ×10 LVs |
+| 2    | ×10 LVs |
 | 3    |  ×10 SC |
 | 4    | ×5 CRTs |
-| 5    | ×10 LVS |
+| 5    | ×10 LVs |
 | 6    |  ×10 SC |
-| 7    | ×10 LVS |
+| 7    | ×10 LVs |
 
-Each main diagonal is worth **×50 LVS**, for a combined ×100 LVS if both are completed.
+Each main diagonal is worth **×50 LVs**, for a combined ×100 LVs if both are completed.
 
 Therefore, the four especially valuable structural targets are:
 
