@@ -241,6 +241,7 @@
 .recommended-move { width: 100%; display: flex; align-items: center; gap: 10px; margin: 10px 0 8px; padding: 9px; border: 1px solid #4d5b50; border-radius: 5px; background: var(--surface-raised); color: inherit; font: inherit; text-align: left; cursor: pointer; transition: border-color 120ms ease, background-color 120ms ease, box-shadow 120ms ease; }
 .recommended-move > strong { flex: none; min-width: 48px; padding: 7px; border-radius: 4px; background: #397349; color: #fff; font-size: 18px; line-height: 1; text-align: center; }
 .recommended-move p { margin: 0; color: var(--text); font-size: 13px; line-height: 1.4; }
+.future-explanation { margin: -3px 0 8px; color: var(--muted); font-size: 11px; line-height: 1.35; }
 .recommended-move:hover,
 .recommended-move:focus-visible,
 .recommended-move.is-selected { border-color: #8bd39a; background: #28342b; box-shadow: 0 0 0 2px rgba(116, 201, 135, 0.3), 0 0 13px rgba(86, 177, 108, 0.2); }

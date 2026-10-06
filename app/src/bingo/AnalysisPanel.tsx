@@ -16,7 +16,7 @@ type AnalysisPanelProps = Pick<
   | 'selectedPosition'
   | 'setDismissedHoverPosition'
   | 'setHoveredPosition'
-  | 'shouldSwapForImmediateValue'
+  | 'shouldSwapForHigherAdaptiveValue'
   | 'slotPieceType'
   | 'storedRecommendation'
   | 'toggleRecommendation'
@@ -41,7 +41,7 @@ export function AnalysisPanel({ session }: { session: AnalysisPanelProps }) {
     selectedPosition,
     setDismissedHoverPosition,
     setHoveredPosition,
-    shouldSwapForImmediateValue,
+    shouldSwapForHigherAdaptiveValue,
     slotPieceType,
     storedRecommendation,
     toggleRecommendation,
@@ -82,6 +82,7 @@ export function AnalysisPanel({ session }: { session: AnalysisPanelProps }) {
               <strong>{positionLabel(recommendation.center)}</strong>
               <p>{recommendation.explanation}</p>
             </button>
+            <p className="future-explanation">{recommendation.futureExplanation}</p>
             <div className="move-facts">
               <div><strong>{recommendation.newCells}</strong><span>new tiles</span></div>
               <div><strong>{recommendation.overlaps}</strong><span>overlaps</span></div>
@@ -131,10 +132,10 @@ export function AnalysisPanel({ session }: { session: AnalysisPanelProps }) {
 
         <div className="swap-advice" aria-live="polite">
           {pieceType && slotPieceType && storedRecommendation && recommendation
-            ? shouldSwapForImmediateValue
-              ? `Swap to stored ${pieceName(slotPieceType)} for a stronger placement now; keep ${pieceName(pieceType)} for later. Future flexibility is not simulated.`
-              : `Keep ${pieceName(pieceType)} in hand for a stronger placement now; save ${pieceName(slotPieceType)} for later. Future flexibility is not simulated.`
-            : 'Choose a hand piece and store a second piece to compare current-board placements.'}
+            ? shouldSwapForHigherAdaptiveValue
+              ? `Swap to stored ${pieceName(slotPieceType)} for a better current-and-next-turn outlook; keep ${pieceName(pieceType)} available in storage.`
+              : `Keep ${pieceName(pieceType)} in hand for a better current-and-next-turn outlook; preserve ${pieceName(slotPieceType)} in storage.`
+            : 'Choose a hand piece and store a second piece to compare moves with a drop-rate-weighted next turn.'}
         </div>
       </section>
 

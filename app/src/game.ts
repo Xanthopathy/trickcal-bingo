@@ -184,6 +184,26 @@ export type PlacementCandidate = {
   explanation: string
 }
 
+export type AdaptivePlacementCandidate = PlacementCandidate & {
+  immediateScore: number
+  expectedFutureScore: number
+  futureExplanation: string
+}
+
+export const FUTURE_VALUE_DISCOUNT = 0.35
+
+const PIECE_TYPES = Object.keys(DEFAULT_PIECE_RATES) as PieceType[]
+
+const normalizePieceRates = (pieceRates: PieceRates): PieceRates => {
+  const total = PIECE_TYPES.reduce((sum, pieceType) => sum + pieceRates[pieceType], 0)
+  const source = total > 0 ? pieceRates : DEFAULT_PIECE_RATES
+  const sourceTotal = total > 0 ? total : 100
+
+  return Object.fromEntries(
+    PIECE_TYPES.map((pieceType) => [pieceType, source[pieceType] / sourceTotal]),
+  ) as PieceRates
+}
+
 const rowRewards: BingoReward[] = [
   { leaves: 10, starCandy: 0, certificates: 0 },
   { leaves: 10, starCandy: 0, certificates: 0 },
@@ -454,4 +474,60 @@ export const rankPlacements = (
       left.center.row - right.center.row ||
       left.center.col - right.center.col,
   )
+}
+
+export const rankAdaptivePlacements = (
+  board: Board,
+  pieceType: PieceType,
+  storedPieceType: PieceType | null,
+  pieceRates: PieceRates = DEFAULT_PIECE_RATES,
+  priorityWeights: PriorityWeights = DEFAULT_PRIORITY_WEIGHTS,
+): AdaptivePlacementCandidate[] => {
+  const rates = normalizePieceRates(pieceRates)
+
+  return rankPlacements(board, pieceType, pieceRates, priorityWeights)
+    .map((candidate): AdaptivePlacementCandidate => {
+      const nextBoard = placePiece(board, pieceType, candidate.center)
+      const nextScores = new Map<PieceType, number>()
+      let expectedFutureScore = 0
+
+      for (const drawnPiece of PIECE_TYPES) {
+        const futurePieces = new Set<PieceType>([drawnPiece])
+        if (storedPieceType) futurePieces.add(storedPieceType)
+
+        let bestScore = 0
+        for (const futurePiece of futurePieces) {
+          let futureScore = nextScores.get(futurePiece)
+          if (futureScore === undefined) {
+            futureScore = rankPlacements(
+              nextBoard,
+              futurePiece,
+              pieceRates,
+              priorityWeights,
+            )[0]?.score ?? 0
+            nextScores.set(futurePiece, futureScore)
+          }
+          bestScore = Math.max(bestScore, futureScore)
+        }
+
+        expectedFutureScore += rates[drawnPiece] * bestScore
+      }
+
+      return {
+        ...candidate,
+        immediateScore: candidate.score,
+        expectedFutureScore,
+        score: candidate.score + expectedFutureScore * FUTURE_VALUE_DISCOUNT,
+        futureExplanation: storedPieceType
+          ? 'Next-turn value considers the preserved stored piece or a new piece weighted by its drop rate.'
+          : 'Next-turn value is averaged across future pieces using their configured drop rates.',
+      }
+    })
+    .sort(
+      (left, right) =>
+        right.score - left.score ||
+        right.newCells - left.newCells ||
+        left.center.row - right.center.row ||
+        left.center.col - right.center.col,
+    )
 }
