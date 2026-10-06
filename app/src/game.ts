@@ -20,6 +20,12 @@ export type Position = {
 }
 
 export type PieceRates = Record<PieceType, number>
+export type BingoReward = {
+  leaves: number
+  starCandy: number
+  certificates: number
+}
+
 export type PriorityWeights = {
   diagonal: number
   priority: number
@@ -109,6 +115,38 @@ export const canPlacePiece = (
   center.col >= 0 &&
   center.col < BOARD_SIZE
 
+export const getPlacementCells = (
+  pieceType: PieceType,
+  center: Position,
+): Position[] =>
+  PIECES[pieceType]
+    .map(({ row, col }) => ({ row: center.row + row, col: center.col + col }))
+    .filter(
+      ({ row, col }) =>
+        row >= 0 && row < BOARD_SIZE && col >= 0 && col < BOARD_SIZE,
+    )
+
+export type PlacementDelta = {
+  newCells: Position[]
+  overlaps: Position[]
+}
+
+export const getPlacementDelta = (
+  board: Board,
+  pieceType: PieceType,
+  center: Position,
+): PlacementDelta => {
+  const newCells: Position[] = []
+  const overlaps: Position[] = []
+
+  for (const cell of getPlacementCells(pieceType, center)) {
+    if (board[cell.row][cell.col]) overlaps.push(cell)
+    else newCells.push(cell)
+  }
+
+  return { newCells, overlaps }
+}
+
 export const placePiece = (
   board: Board,
   pieceType: PieceType,
@@ -120,12 +158,7 @@ export const placePiece = (
 
   const nextBoard = board.map((row) => [...row])
 
-  for (const offset of PIECES[pieceType]) {
-    const row = center.row + offset.row
-    const col = center.col + offset.col
-    if (row < 0 || row >= BOARD_SIZE || col < 0 || col >= BOARD_SIZE) {
-      continue
-    }
+  for (const { row, col } of getPlacementCells(pieceType, center)) {
     nextBoard[row][col] = true
   }
 
@@ -136,8 +169,7 @@ export type BingoLine = {
   id: string
   label: string
   cells: Position[]
-  reward: string
-  weight: number
+  reward: BingoReward
   kind: 'row' | 'column' | 'diagonal'
 }
 
@@ -152,25 +184,33 @@ export type PlacementCandidate = {
   explanation: string
 }
 
-const rowRewards = [
-  '10 LVs',
-  '10 LVs',
-  '10 SC',
-  '5 CRTs',
-  '10 LVs',
-  '10 SC',
-  '10 LVs',
+const rowRewards: BingoReward[] = [
+  { leaves: 10, starCandy: 0, certificates: 0 },
+  { leaves: 10, starCandy: 0, certificates: 0 },
+  { leaves: 0, starCandy: 10, certificates: 0 },
+  { leaves: 0, starCandy: 0, certificates: 5 },
+  { leaves: 10, starCandy: 0, certificates: 0 },
+  { leaves: 0, starCandy: 10, certificates: 0 },
+  { leaves: 10, starCandy: 0, certificates: 0 },
 ]
 
-const columnRewards = [
-  '10 LVs',
-  '10 SC',
-  '10 LVs',
-  '5 CRTs',
-  '10 LVs',
-  '10 SC',
-  '10 LVs',
+const columnRewards: BingoReward[] = [
+  { leaves: 10, starCandy: 0, certificates: 0 },
+  { leaves: 0, starCandy: 10, certificates: 0 },
+  { leaves: 10, starCandy: 0, certificates: 0 },
+  { leaves: 0, starCandy: 0, certificates: 5 },
+  { leaves: 10, starCandy: 0, certificates: 0 },
+  { leaves: 0, starCandy: 10, certificates: 0 },
+  { leaves: 10, starCandy: 0, certificates: 0 },
 ]
+
+const LEAF_REWARD: BingoReward = { leaves: 50, starCandy: 0, certificates: 0 }
+
+export const formatBingoReward = ({ leaves, starCandy, certificates }: BingoReward): string => {
+  if (leaves > 0) return `${leaves} LVs`
+  if (starCandy > 0) return `${starCandy} SC`
+  return `${certificates} CRTs`
+}
 
 export const BINGO_LINES: BingoLine[] = [
   ...Array.from({ length: BOARD_SIZE }, (_, row): BingoLine => ({
@@ -178,7 +218,6 @@ export const BINGO_LINES: BingoLine[] = [
     label: `Row ${row + 1}`,
     cells: Array.from({ length: BOARD_SIZE }, (_, col) => ({ row, col })),
     reward: rowRewards[row],
-    weight: row === 3 ? 5 : row === 0 || row === 6 ? 2.2 : 1.6,
     kind: 'row',
   })),
   ...Array.from({ length: BOARD_SIZE }, (_, col): BingoLine => ({
@@ -186,7 +225,6 @@ export const BINGO_LINES: BingoLine[] = [
     label: `Column ${String.fromCharCode(65 + col)}`,
     cells: Array.from({ length: BOARD_SIZE }, (_, row) => ({ row, col })),
     reward: columnRewards[col],
-    weight: col === 3 ? 5 : col === 0 || col === 6 ? 2.2 : 1.6,
     kind: 'column',
   })),
   {
@@ -196,8 +234,7 @@ export const BINGO_LINES: BingoLine[] = [
       row: index,
       col: index,
     })),
-    reward: '50 LVs',
-    weight: 6,
+    reward: LEAF_REWARD,
     kind: 'diagonal',
   },
   {
@@ -207,8 +244,7 @@ export const BINGO_LINES: BingoLine[] = [
       row: index,
       col: BOARD_SIZE - index - 1,
     })),
-    reward: '50 LVs',
-    weight: 6,
+    reward: LEAF_REWARD,
     kind: 'diagonal',
   },
 ]
@@ -265,6 +301,31 @@ export const countLineCells = (board: Board, line: BingoLine): number =>
 export const getCompletedLines = (board: Board): BingoLine[] =>
   BINGO_LINES.filter((line) => countLineCells(board, line) === BOARD_SIZE)
 
+export type BoardSummary = {
+  coveredTiles: number
+  completedLines: BingoLine[]
+  reward: BingoReward
+}
+
+export const getBoardSummary = (board: Board): BoardSummary => {
+  const completedLines = getCompletedLines(board)
+  return {
+    coveredTiles: board.reduce(
+      (total, row) => total + row.filter(Boolean).length,
+      0,
+    ),
+    completedLines,
+    reward: completedLines.reduce(
+      (total, line) => ({
+        leaves: total.leaves + line.reward.leaves,
+        starCandy: total.starCandy + line.reward.starCandy,
+        certificates: total.certificates + line.reward.certificates,
+      }),
+      { leaves: 0, starCandy: 0, certificates: 0 },
+    ),
+  }
+}
+
 const getPieceAffinity = (pieceType: PieceType, line: BingoLine): number => {
   if (pieceType === 'cross' && line.kind === 'diagonal') return 1.35
   if (pieceType === 'horizontal' && line.kind === 'row') return 1.15
@@ -281,7 +342,7 @@ const formatExplanation = (
   if (completedLines.length > 0) {
     const [first, ...rest] = completedLines
     const otherCount = rest.length
-    return `Completes ${first.label} (${first.reward})${otherCount > 0 ? ` and ${otherCount} more line${otherCount > 1 ? 's' : ''}` : ''}.`
+    return `Completes ${first.label} (${formatBingoReward(first.reward)})${otherCount > 0 ? ` and ${otherCount} more line${otherCount > 1 ? 's' : ''}` : ''}.`
   }
 
   if (focusLine) {
@@ -315,42 +376,46 @@ export const rankPlacements = (
   const completedBefore = new Set(
     getCompletedLines(board).map((line) => line.id),
   )
+  const lineProgress = new Map(
+    BINGO_LINES.map((line) => [line.id, countLineCells(board, line)]),
+  )
+  const lineWeights = new Map(
+    BINGO_LINES.map((line) => [
+      line.id,
+      getEffectiveLineWeight(line, pieceRates, priorityWeights),
+    ]),
+  )
 
   for (const center of centers) {
-    const { row, col } = center
     if (!canPlacePiece(pieceType, center)) continue
 
-    const nextBoard = placePiece(board, pieceType, center)
-    const coveredOffsets = PIECES[pieceType].filter(({ row: rowOffset, col: colOffset }) => {
-      const nextRow = row + rowOffset
-      const nextCol = col + colOffset
-      return nextRow >= 0 && nextRow < BOARD_SIZE && nextCol >= 0 && nextCol < BOARD_SIZE
-    })
-    const newCells = coveredOffsets.filter(
-      ({ row: rowOffset, col: colOffset }) => !board[row + rowOffset][col + colOffset],
-    ).length
-    const overlaps = coveredOffsets.length - newCells
-    const completedLines = getCompletedLines(nextBoard).filter(
-      (line) => !completedBefore.has(line.id),
+    const delta = getPlacementDelta(board, pieceType, center)
+    const addedCells = new Set(
+      delta.newCells.map(({ row, col }) => row * BOARD_SIZE + col),
     )
-    let score = newCells * 0.08
+    const completedLines: BingoLine[] = []
+    let score = delta.newCells.length * 0.08
 
     let focusLine: BingoLine | null = null
     let focusProgress = 0
     let focusValue = -1
 
     for (const line of BINGO_LINES) {
-      const before = countLineCells(board, line)
+      const before = lineProgress.get(line.id) ?? 0
       if (before === BOARD_SIZE) continue
 
-      const after = countLineCells(nextBoard, line)
-      const added = after - before
+      const added = line.cells.reduce(
+        (count, cell) => count + Number(addedCells.has(cell.row * BOARD_SIZE + cell.col)),
+        0,
+      )
       if (added === 0) continue
 
       const affinity = getPieceAffinity(pieceType, line)
-      const lineWeight = getEffectiveLineWeight(line, pieceRates, priorityWeights)
+      const lineWeight = lineWeights.get(line.id) ?? 0
+      const after = before + added
       if (after === BOARD_SIZE) {
         score += lineWeight * 18 * affinity
+        if (!completedBefore.has(line.id)) completedLines.push(line)
       } else {
         score += lineWeight * added * (0.45 + before / BOARD_SIZE) * affinity
         const value = lineWeight * added * (0.6 + before / BOARD_SIZE)
@@ -363,14 +428,14 @@ export const rankPlacements = (
     }
 
     for (const line of completedLines) {
-      score += getEffectiveLineWeight(line, pieceRates, priorityWeights) * 4
+      score += (lineWeights.get(line.id) ?? 0) * 4
     }
 
     candidates.push({
       center,
       score,
-      newCells,
-      overlaps,
+      newCells: delta.newCells.length,
+      overlaps: delta.overlaps.length,
       completedLines,
       focusLine,
       focusProgress,
