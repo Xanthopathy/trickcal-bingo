@@ -1,4 +1,9 @@
-import { BOARD_SIZE, getPlacementCenter } from '../game'
+import {
+  BINGO_LINES,
+  BOARD_SIZE,
+  formatBingoReward,
+  getPlacementCenter,
+} from '../game'
 import type { BingoSession } from './useBingoSession'
 import { positionLabel } from './constants'
 
@@ -8,6 +13,7 @@ type BoardPanelProps = Pick<
   | 'board'
   | 'boardGridRef'
   | 'clickBoardPosition'
+  | 'completedLines'
   | 'coveredCount'
   | 'history'
   | 'isRecommendationPreview'
@@ -25,6 +31,7 @@ export function BoardPanel({ session }: { session: BoardPanelProps }) {
     board,
     boardGridRef,
     clickBoardPosition,
+    completedLines,
     coveredCount,
     history,
     isRecommendationPreview,
@@ -35,6 +42,11 @@ export function BoardPanel({ session }: { session: BoardPanelProps }) {
     startNewBoard,
     undo,
   } = session
+
+  const completedLineIds = new Set(completedLines.map((line) => line.id))
+  const rowLines = BINGO_LINES.filter((line) => line.kind === 'row')
+  const columnLines = BINGO_LINES.filter((line) => line.kind === 'column')
+  const diagonalLines = BINGO_LINES.filter((line) => line.kind === 'diagonal')
 
   return (
     <section className="board-section" aria-label="Bingo board controls">
@@ -68,11 +80,13 @@ export function BoardPanel({ session }: { session: BoardPanelProps }) {
       </div>
 
       <div className="board-shell">
-        <span className="axis-corner" aria-hidden="true" />
-        <div className="row-labels" aria-hidden="true">
-          {Array.from({ length: BOARD_SIZE }, (_, index) => <span key={index}>{index + 1}</span>)}
-        </div>
-        <div className="board-grid" ref={boardGridRef} role="grid" aria-label="7 by 7 bingo board">
+        <span className="board-corner" aria-hidden="true" />
+        {'ABCDEFG'.split('').map((letter, index) => (
+          <span className="board-file-label" key={letter} style={{ gridRow: 1, gridColumn: index + 2 }}>
+            {letter}
+          </span>
+        ))}
+        <div className="board-grid" ref={boardGridRef} role="grid" aria-label="7 by 7 bingo board" style={{ gridRow: '2 / span 7', gridColumn: '2 / span 7' }}>
           {board.map((row, rowIndex) =>
             row.map((covered, colIndex) => {
               const cellPosition = { row: rowIndex, col: colIndex }
@@ -110,14 +124,59 @@ export function BoardPanel({ session }: { session: BoardPanelProps }) {
             }),
           )}
         </div>
-        <div className="column-labels" aria-hidden="true">
-          {'ABCDEFG'.split('').map((letter) => <span key={letter}>{letter}</span>)}
+        {Array.from({ length: BOARD_SIZE }, (_, index) => (
+          <span className="board-rank-label" key={index} style={{ gridRow: index + 2, gridColumn: 1 }}>
+            {index + 1}
+          </span>
+        ))}
+        {rowLines.map((line, index) => (
+          <div
+            className={`board-reward-cell ${completedLineIds.has(line.id) ? 'is-complete' : ''}`}
+            key={line.id}
+            role="note"
+            aria-label={`${line.label} reward: ${formatBingoReward(line.reward)}`}
+            title={`${line.label}: ${formatBingoReward(line.reward)}`}
+            style={{ gridRow: index + 2, gridColumn: 9 }}
+          >
+            {formatBingoReward(line.reward)}
+          </div>
+        ))}
+        <span className="board-corner" style={{ gridRow: 9, gridColumn: 1 }} aria-hidden="true" />
+        {columnLines.map((line, index) => (
+          <div
+            className={`board-reward-cell ${completedLineIds.has(line.id) ? 'is-complete' : ''}`}
+            key={line.id}
+            role="note"
+            aria-label={`${line.label} reward: ${formatBingoReward(line.reward)}`}
+            title={`${line.label}: ${formatBingoReward(line.reward)}`}
+            style={{ gridRow: 9, gridColumn: index + 2 }}
+          >
+            {formatBingoReward(line.reward)}
+          </div>
+        ))}
+        <div
+          className={`board-reward-cell board-diagonal-reward ${completedLineIds.has(diagonalLines[1].id) ? 'is-complete' : ''}`}
+          role="note"
+          aria-label={`${diagonalLines[1].label} reward: ${formatBingoReward(diagonalLines[1].reward)}`}
+          title={`${diagonalLines[1].label}: ${formatBingoReward(diagonalLines[1].reward)}`}
+          style={{ gridRow: 1, gridColumn: 9 }}
+        >
+          {formatBingoReward(diagonalLines[1].reward)}
+        </div>
+        <div
+          className={`board-reward-cell board-diagonal-reward ${completedLineIds.has(diagonalLines[0].id) ? 'is-complete' : ''}`}
+          role="note"
+          aria-label={`${diagonalLines[0].label} reward: ${formatBingoReward(diagonalLines[0].reward)}`}
+          title={`${diagonalLines[0].label}: ${formatBingoReward(diagonalLines[0].reward)}`}
+          style={{ gridRow: 9, gridColumn: 9 }}
+        >
+          {formatBingoReward(diagonalLines[0].reward)}
         </div>
       </div>
 
       <div className="board-legend" aria-label="Board legend">
         <span><i className="legend-covered" /> Covered</span>
-        <span><i className="legend-new" /> Selected preview</span>
+        <span><i className="legend-new" /> Selected</span>
         <span><i className="legend-suggested" /> Recommendation</span>
         <span><i className="legend-overlap" /> Overlap</span>
       </div>
