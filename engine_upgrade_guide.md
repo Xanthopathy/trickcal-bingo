@@ -4,11 +4,11 @@ A plain-language guide to what the engine does today and how to improve it witho
 
 ## The Short Version
 
-The engine is currently a **one-move-at-a-time scorer**. It tries the possible places for a piece, gives each placement points for covering useful cells and advancing bingo lines, and recommends the highest-scoring placement.
+The engine currently uses a **one-draw lookahead heuristic**. It scores placements for the current piece, then estimates the value of the next move using the stored piece and the configured piece-drop rates.
 
-It can compare the piece in your hand with the stored piece, but that comparison is also about the board **right now**. It does not yet figure out which piece will be more useful after future pieces arrive.
+This is smarter than a purely immediate scorer, but it only estimates one future draw. It does not yet plan through the rest of the board or evaluate a user-selected end goal.
 
-The most useful next upgrade is to teach it to value real bingo rewards, then test strategies in simulated games. After that, add a small amount of future planning.
+The next step is an offline simulator that compares strategies on identical seeded games. Once we can measure results for configurable end goals, we can use the same game rules to build and validate full-game lookahead.
 
 ## What the Engine Does Today
 
@@ -21,9 +21,9 @@ For each possible placement, the engine roughly asks:
 - Does it complete any lines?
 - Are those lines considered important by the current weights?
 
-It then sorts placements from highest score to lowest. The score is a **ranking tool**, not a number of LVs, SC, CRTs, or a probability of winning.
+It estimates an immediate placement score, adds a discounted expected value for the next turn, then sorts placements. The score is a **ranking tool**, not a number of leaves, star candy, certificates, or a probability of winning. The one-draw discount is experimental and has not yet been validated in batches of complete games.
 
-When there is a piece in storage, the app also finds the stored piece's best placement on the same board and compares its score with the hand piece's best score. That can answer, “Which piece fits better right now?” It cannot answer, “Which piece should I save because it will be more valuable later?”
+When there is a piece in storage, the next-turn estimate considers keeping that piece available alongside the next random draw. This gives storage some flexibility value, but only over one future turn. It cannot yet answer which sequence of choices is best through the end of the board.
 
 ### The numbers that look like rates
 
@@ -41,56 +41,62 @@ Imagine choosing between two moves:
 - Move A earns a small amount of value now, but leaves a great piece in storage for later.
 - Move B scores more immediately, but uses up that piece where it may not help much.
 
-A one-move scorer sees the current score difference. A lookahead engine also imagines what could happen next: a new piece is drawn, you choose a placement, and the board changes again.
+The current engine looks through one draw: it asks what good next placement might be possible after each candidate move. Future draws are weighted by the configured rates, and the stored piece remains available. It does **not** continue this process until the board ends.
+
+A future full-game planner would simulate several possible sequences of draws and placements through the selected end goal. It would estimate the average final outcome of each current move rather than only the next move.
 
 In plain language, it tries to answer:
 
-> Value of this move = value earned now + the average value of the good choices it leaves you later.
+> Value of this move = immediate heuristic score + discounted expected value of a next move.
 
-“Average” matters because the next piece is random. If piece rates say a shape is common, the engine should expect to see it more often than a rare shape. It should not pretend to know the exact next draw.
+“Average” matters because the next piece is random. If piece rates say a shape is common, the engine gives that possible draw more influence than a rare shape. The result is still an experimental heuristic score, not a measured reward or a full-game guarantee.
 
 ## A Practical Upgrade Path
 
-### 1. Decide what “good” means
+### 1. Define end goals separately from strategies
 
-The project has different bingo rewards: LVs, SC, and CRTs. The engine needs a clear way to compare them. For example, you might want to maximize total reward value, prefer some reward types, or simply maximize the number of completed bingos.
+The user should be able to compare the same strategy under different goals:
 
-Until that choice is explicit, weights like “diagonals are worth 6” are just convenient guesses. They may rank moves consistently, but they do not directly represent the rewards shown to the player.
+- **Fill the board:** continue until all 49 tiles are covered.
+- **Priority bingos, then skip:** stop when both diagonals, Column D, and Row 4 are complete **and** the configured skip threshold has been reached. Reaching only one condition is not enough; a fully covered board is the hard stopping cap.
 
-### 2. Build a game simulator
+Do not silently convert leaves, star candy, and certificates into one score. Report those totals separately, alongside bingo count and priority-line completion. Only use a combined reward score when the user has explicitly chosen conversion values.
 
-A simulator plays through a board using the same rules as the app: pieces, overlaps, the storage slot, and the skip threshold. Give it a starting random seed so the same piece sequence can be replayed.
+### 2. Give strategies one shared interface
 
-Then compare a few strategies on the **same** piece sequences:
+A strategy receives the current board, hand piece, stored piece, piece rates, and end-goal context, then chooses which available piece to place and where. The end goal decides when a game ends; it should not be baked into a strategy's identity. This lets the same strategy be tested against multiple goals.
 
-- The simple 4×3 human strategy from the project notes
-- The current placement scorer
-- A new version of the engine
+### 3. Build the deterministic simulator
 
-Track actual rewards and completed bingos over many boards. This tells us whether a change really helps, rather than only making its internal score look bigger.
+The simulator applies the real rules: placements, overlap, hand/storage swaps, random draws, and the selected stopping condition. Use a seed so a complete piece sequence can be replayed exactly.
 
-### 3. Score actual rewards
+When comparing strategies, give every strategy the same initial state and the same piece sequence. The simulator is an evaluation harness; it measures strategies but does not automatically invent a better one.
 
-When a move completes a line, use that line's real reward in the score. For incomplete lines, estimate how likely they are to be finished before the board ends. A line missing one cell should generally be treated differently from a line missing five.
+### 4. Establish the baselines
 
-The estimate can start simple. It does not need to predict the future perfectly; the simulator will show whether the estimate is useful.
+Compare at least:
 
-### 4. Add a small lookahead
+- The simple 4×3 human strategy
+- The current immediate/priority heuristic
+- The current one-draw adaptive heuristic
 
-For each promising current move:
+Track complete-game bingo counts, separate resource totals, priority lines completed, tiles covered, and whether/when the selected goal was reached. Test both configured goals and varied piece distributions.
 
-1. Apply the move to a copy of the board.
-2. Consider possible next pieces, weighted by their estimated rates.
-3. Find the best next move for each possible piece, including the stored piece.
-4. Average those future scores and add them to the value of the current move.
+### 5. Add full-game planning
 
-Start with only a few top current moves and one future draw. That keeps it understandable and quick. If simulation results show a benefit, increase the search depth later.
+Once the simulator is trusted, evaluate each candidate move with future rollouts through the selected end goal:
 
-### 5. Check that it improved
+1. Apply a candidate placement.
+2. Draw possible future pieces according to the configured rates.
+3. Let the strategy choose placements, including free hand/storage swaps.
+4. Continue until the goal's stopping condition is met.
+5. Average the final outcome vector across many rollouts.
 
-Keep a set of piece sequences for tuning and a separate set for final checks. Compare average rewards, bingo counts, and how often each strategy wins or loses against the baseline. Include awkward cases, such as getting very few Horizontal or Vertical pieces.
+Use bounded Monte Carlo rollouts or beam search rather than assuming exhaustive search is feasible. The same simulator transition rules should power both offline comparisons and live full-game recommendations.
 
-A strategy is better because it performs better across many games, not because its hand-tuned score is larger.
+### 6. Validate on unseen games
+
+Use separate seeded sequences for tuning and final evaluation. Compare the full-game planner with the baselines across both goals and multiple piece distributions. A strategy is better when it improves repeatable game outcomes, not merely because its internal score is higher.
 
 ## What Not to Do Yet
 

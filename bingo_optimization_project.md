@@ -62,7 +62,7 @@ Rows:
 | 6    |  ×10 SC |
 | 7    | ×10 LVs |
 
-Each main diagonal is worth **×50 LVs**, for a combined ×100 LVs if both are completed.
+Each main diagonal is worth **×50 leaves**, for a combined ×100 leaves if both are completed.
 
 Therefore, the four especially valuable structural targets are:
 
@@ -227,6 +227,26 @@ The ultimate goal is to determine whether this adaptive approach actually outper
 
 Build a simple, fast interactive site centered around the 7×7 board.
 
+### Separate the planner, strategy, and end goal
+
+The site has two related workflows:
+
+- **Player planner:** model one live board, inspect the recommended move, and place pieces manually. The planner can select which strategy to use, but it does not run batches of games.
+- **Simulation Lab page:** choose one or more strategies and an end goal, then compare their results across the same reproducible game sequences.
+
+Keep three concepts separate:
+
+- A **strategy** chooses a placement, including whether to use the hand piece or the stored piece.
+- An **end goal** defines when a simulated board ends and which outcomes matter.
+- The **simulator** applies game rules, draws pieces, and measures strategy outcomes. It evaluates strategies; it does not automatically invent or improve them.
+
+The end goal is a user setting, not part of a strategy. Initial goal options:
+
+1. **Fill the board:** continue until all 49 tiles are covered. Compare bingo count and the separate leaves, star candy, and certificate totals.
+2. **Priority bingos, then skip:** continue until both conditions are met: both diagonals, Column D, and Row 4 are complete, and the configured skip threshold has been reached. Reaching the threshold alone does not end this goal; completing the four lines alone does not end it either. A fully covered board is the hard stopping cap.
+
+Do not combine leaves, star candy, and certificates into one score unless the user explicitly supplies conversion weights. Keep reward totals as a vector so players can compare goals according to their own preferences.
+
 ### Core interface
 
 The main screen should contain:
@@ -284,6 +304,7 @@ along with a small explanation such as:
 > Completes Row 4 and adds 3 cells toward the main diagonal.
 
 Multiple alternatives should optionally be shown.
+The planner should let the user select the strategy used for recommendations. Keep this selection independent from the end goal; the end goal controls simulation and eventual full-game planning, not the rules of the board.
 
 ---
 
@@ -363,7 +384,19 @@ Purpose:
 
 - Establish a straightforward algorithmic baseline.
 
-### D. Monte Carlo Lookahead
+### D. Current Adaptive Heuristic
+
+The current adaptive ranker adds a **one-draw expected continuation** to the immediate placement score. It evaluates the preserved stored piece and possible next draws weighted by the configured piece rates. Its future-value discount is experimental.
+
+This is a short lookahead heuristic, not a full-game solver. Its score is a ranking value, not an actual combined amount of leaves, star candy, and certificates.
+
+### E. Full-Game Planner (Future)
+
+Evaluate candidate moves by simulating possible draws and good placements through the selected end goal. Use a bounded method such as Monte Carlo rollouts or beam search rather than assuming exhaustive search is practical.
+
+The full-game planner must use the same transition rules and goals as the offline simulator. Compare it against the baselines on held-out seeded sequences before presenting it as stronger.
+
+### F. Monte Carlo Lookahead
 
 For each legal current placement:
 
@@ -383,7 +416,7 @@ Configurable parameters:
 
 This should allow experimentation with the tradeoff between calculation time and prediction quality.
 
-### E. Search / Dynamic Programming
+### G. Search / Dynamic Programming
 
 Explore a more exact state-space approach where feasible.
 
@@ -409,6 +442,7 @@ Given the same:
 - Current piece and initial placeholder/item slot contents
 - Piece distribution
 - Reset rule
+- Selected end goal
 - Number of trials
 - Reward model
 
@@ -417,19 +451,20 @@ run multiple algorithms against identical random sequences. Each algorithm may s
 Compare metrics such as:
 
 - Average bingos per board
-- Average total reward
+- Average leaves, star candy, and certificates, reported separately
 - Median bingos
 - Distribution of bingos
-- Probability of reaching the reset threshold
+- Probability of reaching the selected end goal
 - Average number of pieces used
-- Reward per piece
-- Frequency of completing the four priority targets
+- Leaves, star candy, and certificates earned per piece, reported separately
+- Completion rate for each of the 16 bingo lines
+- Priority lines completed at the configured stopping point
 
 ### Visualization ideas
 
 Use charts for:
 
-- Average reward by algorithm
+- Average leaves, star candy, and certificates by algorithm
 - Average bingos by algorithm
 - Distribution/histogram of outcomes
 - Cumulative reward over pieces
@@ -540,23 +575,27 @@ Implement:
 - 4×3 strategy
 - Priority-line heuristic
 - Greedy reward heuristic
+- Shared strategy interface for the planner and simulator
 
 ### Phase 4 — Simulation
 
 Implement:
 
+- User-selectable end goals and stopping rules
 - Configurable piece distributions
 - Random sequence generation
 - Reproducible seeds
+- Identical piece sequences across compared strategies
 - Batch simulations
-- Metrics
+- Separate bingo and reward-vector metrics
 
 ### Phase 5 — Advanced optimization
 
 Implement:
 
-- Monte Carlo lookahead
-- Search/DP experiments
+- Evaluate the current one-draw heuristic in simulation
+- Full-game rollouts to each selected end goal
+- Beam search / expectimax experiments if rollouts are promising
 - Piece-substitution scoring
 - Future-flexibility scoring
 
