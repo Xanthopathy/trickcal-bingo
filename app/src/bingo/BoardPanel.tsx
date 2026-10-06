@@ -4,18 +4,15 @@ import { positionLabel } from './constants'
 
 type BoardPanelProps = Pick<
   BingoSession,
+  | 'activePosition'
   | 'board'
   | 'boardGridRef'
-  | 'commitPlacement'
+  | 'clickBoardPosition'
   | 'coveredCount'
-  | 'cursorPosition'
   | 'history'
+  | 'isRecommendationPreview'
   | 'pieceType'
   | 'previewCells'
-  | 'recommendation'
-  | 'setCursorPosition'
-  | 'setHoveredPosition'
-  | 'setSelectedPosition'
   | 'skipThreshold'
   | 'slotPieceType'
   | 'startNewBoard'
@@ -24,25 +21,20 @@ type BoardPanelProps = Pick<
 
 export function BoardPanel({ session }: { session: BoardPanelProps }) {
   const {
+    activePosition,
     board,
     boardGridRef,
-    commitPlacement,
+    clickBoardPosition,
     coveredCount,
-    cursorPosition,
     history,
+    isRecommendationPreview,
     pieceType,
     previewCells,
-    recommendation,
-    setCursorPosition,
-    setHoveredPosition,
-    setSelectedPosition,
     skipThreshold,
     slotPieceType,
     startNewBoard,
     undo,
   } = session
-
-  const isAutomaticSuggestion = cursorPosition === null
 
   return (
     <section className="board-section" aria-label="Bingo board controls">
@@ -89,19 +81,19 @@ export function BoardPanel({ session }: { session: BoardPanelProps }) {
                 : cellPosition
               const key = `${rowIndex}-${colIndex}`
               const preview = previewCells.get(key)
-              const isRecommended =
-                recommendation?.center.row === rowIndex &&
-                recommendation.center.col === colIndex
+              const isPlacementAnchor =
+                activePosition?.row === rowIndex &&
+                activePosition.col === colIndex
               const cellClass = [
                 'board-cell',
                 covered ? 'is-covered' : '',
                 preview === false
-                  ? isAutomaticSuggestion ? 'is-suggested-new' : 'is-preview-new'
+                  ? isRecommendationPreview ? 'is-suggested-new' : 'is-preview-new'
                   : '',
                 preview === true
-                  ? isAutomaticSuggestion ? 'is-suggested-overlap' : 'is-preview-overlap'
+                  ? isRecommendationPreview ? 'is-suggested-overlap' : 'is-preview-overlap'
                   : '',
-                isRecommended ? 'is-recommendation-anchor' : '',
+                isPlacementAnchor ? 'is-recommendation-anchor' : '',
               ].filter(Boolean).join(' ')
 
               return (
@@ -112,12 +104,7 @@ export function BoardPanel({ session }: { session: BoardPanelProps }) {
                   key={key}
                   aria-label={`${positionLabel(cellPosition)}${covered ? ', covered' : ', empty'}`}
                   title={positionLabel(cellPosition)}
-                  onMouseEnter={() => setCursorPosition(placementCenter)}
-                  onMouseLeave={() => setCursorPosition(null)}
-                  onFocus={() => setHoveredPosition(placementCenter)}
-                  onBlur={() => setHoveredPosition(null)}
-                  onClick={() => setSelectedPosition(placementCenter)}
-                  onDoubleClick={() => commitPlacement(placementCenter)}
+                  onClick={() => clickBoardPosition(placementCenter)}
                 />
               )
             }),
@@ -134,10 +121,12 @@ export function BoardPanel({ session }: { session: BoardPanelProps }) {
         <span><i className="legend-suggested" /> Recommendation</span>
         <span><i className="legend-overlap" /> Overlap</span>
       </div>
-      <p className="board-hint">Click to preview · Double-click to place</p>
+      <p className="board-hint">Click to preview · Click again to place</p>
       <p className="board-scroll-note">Scroll over the board to cycle the hand piece.</p>
       <div className="control-note">
-        Hotkeys: 1–5 piece · S swap · Z undo · R restart · P place · 7–0 candidates · Esc clear preview
+        Hotkeys: 1–5 piece · 7–0 candidates
+        <br />
+        S swap · Z undo · R restart · P place · Esc clear preview
       </div>
     </section>
   )

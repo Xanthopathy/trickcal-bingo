@@ -185,7 +185,7 @@
 .board-cell.is-preview-overlap { border-color: #a65a54; background: repeating-linear-gradient(135deg, #ca8877 0 4px, #e1b09a 4px 8px); }
 .board-cell.is-suggested-new { border-color: #756497; background: #c0b2d6; }
 .board-cell.is-suggested-overlap { border-color: #756497; background: repeating-linear-gradient(135deg, #a89abb 0 4px, #d0c3e1 4px 8px); }
-.board-cell.is-recommendation-anchor::after { position: absolute; inset: 2px; border: 1px dashed rgba(255, 255, 255, 0.84); border-radius: 2px; content: ''; pointer-events: none; }
+.board-cell.is-recommendation-anchor::after { position: absolute; z-index: 1; inset: 0; border: 3px solid #fff2b8; border-radius: 3px; background: rgba(255, 225, 139, 0.24); box-shadow: inset 0 0 0 1px #68521c, 0 0 0 1px #252a26; content: ''; pointer-events: none; }
 .board-legend { display: flex; justify-content: center; flex-wrap: wrap; gap: 9px 13px; color: #e0e7e1; font-size: 11px; }
 .board-legend span { display: inline-flex; align-items: center; gap: 5px; }
 .board-legend i { width: 10px; height: 10px; border: 1px solid transparent; border-radius: 3px; }

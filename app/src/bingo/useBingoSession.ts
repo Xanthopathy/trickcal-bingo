@@ -133,6 +133,7 @@ export function useBingoSession() {
   const [skipThreshold, setSkipThreshold] = useState(savedState.skipThreshold)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [history, setHistory] = useState<Board[]>([])
+  const [lastBoardClick, setLastBoardClick] = useState<Position | null>(null)
   const [hoveredPosition, setHoveredPosition] = useState<Position | null>(null)
   const [cursorPosition, setCursorPosition] = useState<Position | null>(null)
   const [selectedPosition, setSelectedPosition] = useState<Position | null>(() =>
@@ -164,8 +165,13 @@ export function useBingoSession() {
   const shouldSwapForImmediateValue = Boolean(
     recommendation && storedRecommendation && storedRecommendation.score > recommendation.score,
   )
-  const activePosition = cursorPosition ?? hoveredPosition ?? selectedPosition ?? null
-  const isAutomaticSuggestion = cursorPosition === null
+  const activePosition = hoveredPosition ?? selectedPosition ?? null
+  const isRecommendationPreview = Boolean(
+    activePosition &&
+    recommendations.slice(0, 4).some(
+      ({ center }) => center.row === activePosition.row && center.col === activePosition.col,
+    ),
+  )
   const boardSummary = useMemo(() => getBoardSummary(board), [board])
   const { completedLines, coveredTiles: coveredCount } = boardSummary
   const progressLines = useMemo(
@@ -229,6 +235,7 @@ export function useBingoSession() {
       setCursorPosition(null)
       setHoveredPosition(null)
       setSelectedPosition(null)
+      setLastBoardClick(null)
     }
 
     boardGrid.addEventListener('wheel', handleWheel, { passive: false })
@@ -252,6 +259,7 @@ export function useBingoSession() {
         setCursorPosition(null)
         setHoveredPosition(null)
         setDismissedHoverPosition(null)
+        setLastBoardClick(null)
         event.preventDefault()
         return
       }
@@ -274,6 +282,7 @@ export function useBingoSession() {
         setCursorPosition(null)
         setHoveredPosition(null)
         setDismissedHoverPosition(null)
+        setLastBoardClick(null)
         event.preventDefault()
         return
       }
@@ -289,6 +298,7 @@ export function useBingoSession() {
           setCursorPosition(null)
           setHoveredPosition(null)
           setDismissedHoverPosition(null)
+          setLastBoardClick(null)
         }
         event.preventDefault()
         return
@@ -304,12 +314,13 @@ export function useBingoSession() {
         setCursorPosition(null)
         setHoveredPosition(null)
         setDismissedHoverPosition(null)
+        setLastBoardClick(null)
         event.preventDefault()
         return
       }
 
       if (key === 'p') {
-        const center = cursorPosition ?? hoveredPosition ?? selectedPosition
+        const center = hoveredPosition ?? selectedPosition
         if (center && pieceType) {
           setHistory((previous) => [...previous, board].slice(-30))
           const nextBoard = placePiece(board, pieceType, center)
@@ -318,6 +329,7 @@ export function useBingoSession() {
           setCursorPosition(null)
           setHoveredPosition(null)
           setDismissedHoverPosition(null)
+          setLastBoardClick(null)
         }
         event.preventDefault()
         return
@@ -335,6 +347,7 @@ export function useBingoSession() {
           setCursorPosition(null)
           setHoveredPosition(null)
           setDismissedHoverPosition(isSelected ? candidate.center : null)
+          setLastBoardClick(null)
           event.preventDefault()
         }
         return
@@ -345,6 +358,7 @@ export function useBingoSession() {
         setCursorPosition(null)
         setHoveredPosition(null)
         setDismissedHoverPosition(null)
+        setLastBoardClick(null)
       }
     }
 
@@ -361,6 +375,22 @@ export function useBingoSession() {
     setCursorPosition(null)
     setHoveredPosition(null)
     setDismissedHoverPosition(null)
+    setLastBoardClick(null)
+  }
+
+  const clickBoardPosition = (center: Position) => {
+    const isSecondClick =
+      lastBoardClick?.row === center.row && lastBoardClick.col === center.col
+    if (isSecondClick) {
+      commitPlacement(center)
+      return
+    }
+
+    setLastBoardClick(center)
+    setCursorPosition(null)
+    setHoveredPosition(null)
+    setDismissedHoverPosition(null)
+    setSelectedPosition(center)
   }
 
   const undo = () => {
@@ -374,6 +404,7 @@ export function useBingoSession() {
     setCursorPosition(null)
     setHoveredPosition(null)
     setDismissedHoverPosition(null)
+    setLastBoardClick(null)
   }
 
   const startNewBoard = () => {
@@ -386,6 +417,7 @@ export function useBingoSession() {
     setCursorPosition(null)
     setHoveredPosition(null)
     setDismissedHoverPosition(null)
+    setLastBoardClick(null)
   }
 
   const swapSlot = () => {
@@ -408,6 +440,7 @@ export function useBingoSession() {
     setCursorPosition(null)
     setHoveredPosition(null)
     setDismissedHoverPosition(null)
+    setLastBoardClick(null)
   }
 
   const selectPiece = (nextPieceType: PieceType) => {
@@ -416,6 +449,7 @@ export function useBingoSession() {
     setCursorPosition(null)
     setHoveredPosition(null)
     setDismissedHoverPosition(null)
+    setLastBoardClick(null)
   }
 
   const toggleRecommendation = (center: Position) => {
@@ -424,6 +458,7 @@ export function useBingoSession() {
     setSelectedPosition(isSelected ? null : center)
     setHoveredPosition(null)
     setDismissedHoverPosition(isSelected ? center : null)
+    setLastBoardClick(null)
   }
 
   const updatePieceRate = (updatedPiece: PieceType, value: number) => {
@@ -440,6 +475,7 @@ export function useBingoSession() {
     setCursorPosition(null)
     setHoveredPosition(null)
     setDismissedHoverPosition(null)
+    setLastBoardClick(null)
   }
 
   const updatePriorityWeight = (key: keyof PriorityWeights, value: number) => {
@@ -456,6 +492,7 @@ export function useBingoSession() {
     setCursorPosition(null)
     setHoveredPosition(null)
     setDismissedHoverPosition(null)
+    setLastBoardClick(null)
   }
 
   const resetSiteData = () => {
@@ -491,7 +528,7 @@ export function useBingoSession() {
     dismissedHoverPosition,
     history,
     hoveredPosition,
-    isAutomaticSuggestion,
+    isRecommendationPreview,
     pieceRates,
     pieceType,
     priorityWeights,
@@ -507,6 +544,7 @@ export function useBingoSession() {
     totalPieceRate,
     previewCells,
     commitPlacement,
+    clickBoardPosition,
     resetSiteData,
     selectPiece,
     setCursorPosition,
