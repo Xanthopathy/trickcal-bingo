@@ -28,11 +28,11 @@ export type PriorityWeights = {
 }
 
 export const DEFAULT_PIECE_RATES: PieceRates = {
-  plus: 30,
-  cross: 30,
-  square: 10,
-  horizontal: 15,
-  vertical: 15,
+  plus: 35,
+  cross: 35,
+  square: 5,
+  horizontal: 12.5,
+  vertical: 12.5,
 }
 
 export const DEFAULT_PRIORITY_WEIGHTS: PriorityWeights = {
