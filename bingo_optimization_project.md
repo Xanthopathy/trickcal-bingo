@@ -103,7 +103,7 @@ This means a piece can safely be placed directly across an already occupied line
 
 ### Resetting
 
-The current estimate is that about **42 of the 49 tiles** (roughly 85%) must be covered to skip to a new board, after which rewards are refreshed. This number is based on the player's impression from gameplay and is not confirmed; keep the threshold configurable.
+The current estimate is that about **39 of the 49 tiles** (roughly 80%) must be covered to skip to a new board, after which rewards are refreshed. This number is based on the player's impression from gameplay and is not confirmed; keep the threshold configurable.
 
 ### Tile rewards
 
@@ -315,11 +315,11 @@ The simulator/recommendation engine needs a configurable probability model for i
 Example default model:
 
 ```text
-Cross      30%
-Plus       30%
-Horizontal 15%
-Vertical   15%
-Square     10%
+Cross      35%
+Plus       35%
+Horizontal 12.5%
+Vertical   12.5%
+Square     5%
 ```
 
 These numbers are placeholders and should not be treated as measured probabilities.
