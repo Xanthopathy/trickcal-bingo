@@ -195,7 +195,6 @@
 .legend-overlap { border-color: #a65a54 !important; background: repeating-linear-gradient(135deg, #ca8877 0 3px, #e1b09a 3px 6px); }
 .board-hint,
 .board-scroll-note { margin: 6px 0 0; color: #e0e7e1; font-size: 12px; text-align: center; }
-.board-scroll-note { margin-top: 3px; color: #c9d4cb; }
 .board-section .control-note { width: 100%; text-align: center; }
 
 .piece-section,
@@ -212,11 +211,11 @@
 .piece-option { --piece-color: #4bd181; display: grid; place-items: center; min-width: 0; height: 54px; padding: 4px; border: 1px solid #465149; border-radius: 5px; background: #202521; cursor: pointer; transition: transform 100ms ease, background-color 100ms ease, border-color 100ms ease; }
 .piece-option:hover { transform: translateY(-2px); }
 .piece-option.selected { border: 2px solid var(--piece-color); background: color-mix(in srgb, var(--piece-color) 20%, #202521); }
-.piece-plus { --piece-color: #f2a28e; }
-.piece-cross { --piece-color: #7cdc99; }
-.piece-square { --piece-color: #f0d17c; }
-.piece-horizontal { --piece-color: #91d1ef; }
-.piece-vertical { --piece-color: #d0b2f2; }
+.piece-plus, .piece-icon-plus { --piece-color: #f2a28e; }
+.piece-cross, .piece-icon-cross { --piece-color: #7cdc99; }
+.piece-square, .piece-icon-square { --piece-color: #f0d17c; }
+.piece-horizontal, .piece-icon-horizontal { --piece-color: #91d1ef; }
+.piece-vertical, .piece-icon-vertical { --piece-color: #d0b2f2; }
 .piece-icon-grid { display: grid; grid-template-columns: repeat(7, 4px); grid-template-rows: repeat(7, 4px); gap: 1px; width: 34px; height: 34px; }
 .piece-icon-cell { border-radius: 1px; }
 .piece-icon-cell.is-filled { background: var(--piece-color); }
@@ -234,7 +233,7 @@
 .swap-button:hover:not(:disabled) { background: #355c3e; }
 .swap-button:disabled { opacity: 0.5; cursor: default; }
 .slot-note { margin: 8px 0 0; }
-.control-note { margin-top: 15px; padding-top: 11px; border-top: 1px solid var(--line); }
+.control-note { margin-top: 3px; padding-top: 3px; }
 
 .recommendation-heading { align-items: start; }
 .recommendation-tag { flex: none; padding: 4px 7px; border: 1px solid #6b603f; border-radius: 99px; background: #302b1d; color: var(--gold); font-size: 10px; font-weight: 800; }
