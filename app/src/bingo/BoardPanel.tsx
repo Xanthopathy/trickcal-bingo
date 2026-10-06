@@ -124,9 +124,8 @@ export function BoardPanel({ session }: { session: BoardPanelProps }) {
       <p className="board-hint">Click to preview · Click again to place</p>
       <p className="board-scroll-note">Scroll over the board to cycle the hand piece.</p>
       <div className="control-note">
-        Hotkeys: 1–5 piece · 7–0 candidates
-        <br />
-        S swap · Z undo · R restart · P place · Esc clear preview
+        <span>Hotkeys: 1–5 piece · 7–0 candidates</span>
+        <span>S swap · Z undo · R restart · P place · Esc clear preview</span>
       </div>
     </section>
   )

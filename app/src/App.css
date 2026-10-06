@@ -156,7 +156,7 @@
 .skip-progress-track > i { position: absolute; top: -3px; width: 2px; height: 11px; background: #ecc276; }
 .skip-progress-labels { display: flex; justify-content: space-between; gap: 8px; margin-top: 6px; color: #e2e9e3; font-size: 12px; }
 
-.board-section { grid-area: board; display: flex; flex-direction: column; align-items: center; padding: 13px 14px 12px; border: 2px solid #3b453e; border-block-color: #58a36b; border-radius: 7px; }
+.board-section { grid-area: board; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 13px 14px 12px; border: 2px solid #3b453e; border-block-color: #58a36b; border-radius: 7px; }
 .board-toolbar,
 .panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .board-toolbar { width: 100%; }
@@ -170,7 +170,7 @@
 .skip-button { color: #f0d58e; }
 .restart-button { color: #f0b4a8; }
 
-.board-shell { width: min(100%, 300px); display: grid; grid-template-columns: minmax(0, 1fr) 25px; grid-template-rows: minmax(0, 1fr) 24px; margin: 10px auto 8px; }
+.board-shell { width: min(100%, 300px); display: grid; grid-template-columns: minmax(0, 1fr) 25px; grid-template-rows: minmax(0, 1fr) 24px; margin: 0 auto; }
 .axis-corner,
 .row-labels,
 .column-labels { display: grid; place-items: center; color: #ecf0ec; font-size: 13px; font-weight: 750; }
@@ -194,7 +194,7 @@
 .legend-suggested { border-color: #756497 !important; background: #c0b2d6; }
 .legend-overlap { border-color: #a65a54 !important; background: repeating-linear-gradient(135deg, #ca8877 0 3px, #e1b09a 3px 6px); }
 .board-hint,
-.board-scroll-note { margin: 6px 0 0; color: #e0e7e1; font-size: 12px; text-align: center; }
+.board-scroll-note { margin: 0; color: #e0e7e1; font-size: 12px; line-height: 1.35; text-align: center; }
 .board-section .control-note { width: 100%; text-align: center; }
 
 .piece-section,
@@ -233,7 +233,7 @@
 .swap-button:hover:not(:disabled) { background: #355c3e; }
 .swap-button:disabled { opacity: 0.5; cursor: default; }
 .slot-note { margin: 8px 0 0; }
-.control-note { margin-top: 3px; padding-top: 3px; }
+.control-note { display: grid; gap: 8px; margin: 0; padding: 0; }
 
 .recommendation-heading { align-items: start; }
 .recommendation-tag { flex: none; padding: 4px 7px; border: 1px solid #6b603f; border-radius: 99px; background: #302b1d; color: var(--gold); font-size: 10px; font-weight: 800; }
