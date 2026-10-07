@@ -109,11 +109,13 @@ The current estimate is that about **39 of the 49 tiles** (roughly 80%) must be 
 
 Use **cover** consistently to mean that a piece lands on a tile. Covering a tile unlocks it and triggers its random reward once; covering it again with an overlapping piece does not trigger another reward. Tile rewards are separate from bingo rewards, which are earned by completing a line.
 
-### Future mechanic: rare 100K-coin tile
+### Notable individual-tile rewards
 
-Each board has a **100K-coin tile** mixed randomly among its 49 tiles; it is called out because it is the most valuable tile reward. In the future, add a player-controlled setting toggle for whether to stay on the current board and try to cover this tile after reaching the estimated skip threshold. When disabled, the player can skip to a new board as soon as the threshold is reached.
+Tile rewards are randomly shuffled on each board, and each tile gives its reward only the first time it is covered. Most tile rewards are treated as equally valuable for planning, so the number of new tiles a placement covers is a useful baseline value.
 
-Because tracking every tile's reward is cumbersome, use a manual checkbox to record whether the 100K-coin tile has been covered rather than requiring players to log every tile reward. The board is randomly mixed each round, so do not assume the coin tile's location is known in advance. Recommendation and simulation logic should treat waiting for it as an optional objective, separate from bingo scoring and board progression.
+Some especially valuable tile rewards can justify staying after the skip threshold is reached. Currently observed rewards are **3 100K-coin and 1 10 certificates rewards**; the names and details of the other two still need to be recorded. Neither the site nor the player can reliably know their locations in advance.
+
+Use one manual player-controlled checkbox per notable reward to record when it has appeared or been claimed in the external game. Do not require logging ordinary tile rewards. The planner can estimate the chance of covering an unclaimed notable reward from how many new tiles a placement covers and how many unknown tile locations remain.
 
 ---
 
@@ -227,25 +229,22 @@ The ultimate goal is to determine whether this adaptive approach actually outper
 
 Build a simple, fast interactive site centered around the 7×7 board.
 
-### Separate the planner, strategy, and end goal
+### Separate the planner, strategy, and simulation
 
 The site has two related workflows:
 
 - **Player planner:** model one live board, inspect the recommended move, and place pieces manually. The planner can select which strategy to use, but it does not run batches of games.
-- **Simulation Lab page:** choose one or more strategies and an end goal, then compare their results across the same reproducible game sequences.
+- **Simulation Lab page:** choose one or more strategies, then compare their results across the same reproducible game sequences.
 
 Keep three concepts separate:
 
 - A **strategy** chooses a placement, including whether to use the hand piece or the stored piece.
-- An **end goal** defines when a simulated board ends and which outcomes matter.
+- A **skip suggestion** tells the player when the board appears ready to leave. It is advice, not an automatic action or a strategy selector.
 - The **simulator** applies game rules, draws pieces, and measures strategy outcomes. It evaluates strategies; it does not automatically invent or improve them.
 
-The end goal is a user setting, not part of a strategy. Initial goal options:
+The planner keeps recommending useful placements while the skip threshold, priority bingos, or player-tracked notable tile rewards remain outstanding. Suggest skipping when the threshold is reached, all four priority targets are complete, and the player has checked off all configured notable rewards. The player makes the final decision; allow a manual skip override.
 
-1. **Fill the board:** continue until all 49 tiles are covered. Compare bingo count and the separate leaves, star candy, and certificate totals.
-2. **Priority bingos, then skip:** continue until both conditions are met: both diagonals, Column D, and Row 4 are complete, and the configured skip threshold has been reached. Reaching the threshold alone does not end this goal; completing the four lines alone does not end it either. A fully covered board is the hard stopping cap.
-
-Do not combine leaves, star candy, and certificates into one score unless the user explicitly supplies conversion weights. Keep reward totals as a vector so players can compare goals according to their own preferences.
+Do not combine leaves, star candy, certificates, and tile rewards into one score unless the user explicitly supplies conversion weights. Keep reward totals separate and explain the factors behind a skip suggestion.
 
 ### Core interface
 
@@ -304,7 +303,7 @@ along with a small explanation such as:
 > Completes Row 4 and adds 3 cells toward the main diagonal.
 
 Multiple alternatives should optionally be shown.
-The planner should let the user select the strategy used for recommendations. Keep this selection independent from the end goal; the end goal controls simulation and eventual full-game planning, not the rules of the board.
+The planner should let the user select the strategy used for recommendations. Show progress toward the priority bingos, skip threshold, and manually tracked notable tile rewards. Derive the skip suggestion from that progress.
 
 ---
 
@@ -392,9 +391,11 @@ This is a short lookahead heuristic, not a full-game solver. Its score is a rank
 
 ### E. Full-Game Planner (Future)
 
-Evaluate candidate moves by simulating possible draws and good placements through the selected end goal. Use a bounded method such as Monte Carlo rollouts or beam search rather than assuming exhaustive search is practical.
+### E. Full-Board Planner (Future)
 
-The full-game planner must use the same transition rules and goals as the offline simulator. Compare it against the baselines on held-out seeded sequences before presenting it as stronger.
+Evaluate candidate moves by simulating possible draws and good placements until the skip suggestion is satisfied or the board is full. Include the storage slot and unknown locations of notable tile rewards. Use a bounded method such as Monte Carlo rollouts or beam search rather than assuming exhaustive search is practical.
+
+The full-board planner must use the same transition rules and skip-suggestion policy as the offline simulator. Compare it against the baselines on held-out seeded sequences before presenting it as stronger.
 
 ### F. Monte Carlo Lookahead
 
@@ -442,7 +443,7 @@ Given the same:
 - Current piece and initial placeholder/item slot contents
 - Piece distribution
 - Reset rule
-- Selected end goal
+- Skip threshold and skip-suggestion policy
 - Number of trials
 - Reward model
 
@@ -454,11 +455,13 @@ Compare metrics such as:
 - Average leaves, star candy, and certificates, reported separately
 - Median bingos
 - Distribution of bingos
-- Probability of reaching the selected end goal
+- Probability of reaching the skip-suggestion conditions
+- Probability of meeting the skip-suggestion conditions
 - Average number of pieces used
 - Leaves, star candy, and certificates earned per piece, reported separately
 - Completion rate for each of the 16 bingo lines
 - Priority lines completed at the configured stopping point
+- Priority lines and notable tile rewards collected before stopping
 
 ### Visualization ideas
 
@@ -581,7 +584,8 @@ Implement:
 
 Implement:
 
-- User-selectable end goals and stopping rules
+- Skip-threshold and skip-suggestion readiness rules
+- Random assignment and manual tracking model for the notable tile rewards
 - Configurable piece distributions
 - Random sequence generation
 - Reproducible seeds
@@ -594,7 +598,7 @@ Implement:
 Implement:
 
 - Evaluate the current one-draw heuristic in simulation
-- Full-game rollouts to each selected end goal
+- Full-board rollouts through skip readiness or the full-board cap
 - Beam search / expectimax experiments if rollouts are promising
 - Piece-substitution scoring
 - Future-flexibility scoring

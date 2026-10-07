@@ -6,9 +6,9 @@ A plain-language guide to what the engine does today and how to improve it witho
 
 The engine currently uses a **one-draw lookahead heuristic**. It scores placements for the current piece, then estimates the value of the next move using the stored piece and the configured piece-drop rates.
 
-This is smarter than a purely immediate scorer, but it only estimates one future draw. It does not yet plan through the rest of the board or evaluate a user-selected end goal.
+This is smarter than a purely immediate scorer, but it only estimates one future draw. It does not yet plan through the rest of the board or estimate when the player should skip based on all tracked objectives.
 
-The next step is an offline simulator that compares strategies on identical seeded games. Once we can measure results for configurable end goals, we can use the same game rules to build and validate full-game lookahead.
+The planner should remain focused on recommending moves. It should also show when skipping looks sensible based on the skip threshold, priority bingos, and the notable tile rewards the player has manually recorded. An offline simulator can compare strategies on identical seeded games and help validate a future full-board planner.
 
 ## What the Engine Does Today
 
@@ -43,7 +43,7 @@ Imagine choosing between two moves:
 
 The current engine looks through one draw: it asks what good next placement might be possible after each candidate move. Future draws are weighted by the configured rates, and the stored piece remains available. It does **not** continue this process until the board ends.
 
-A future full-game planner would simulate several possible sequences of draws and placements through the selected end goal. It would estimate the average final outcome of each current move rather than only the next move.
+A future full-board planner would simulate several possible sequences of draws and placements until the skip suggestion is satisfied or the board is full. It would estimate the average result of each current move rather than only the next move. Because notable reward locations are hidden, each simulated board should randomly assign them; the live planner should use only the rewards the player has marked as seen.
 
 In plain language, it tries to answer:
 
@@ -53,24 +53,27 @@ In plain language, it tries to answer:
 
 ## A Practical Upgrade Path
 
-### 1. Define end goals separately from strategies
+### 1. Define when the planner should suggest skipping
 
-The user should be able to compare the same strategy under different goals:
+The planner should show a skip suggestion when:
 
-- **Fill the board:** continue until all 49 tiles are covered.
-- **Priority bingos, then skip:** stop when both diagonals, Column D, and Row 4 are complete **and** the configured skip threshold has been reached. Reaching only one condition is not enough; a fully covered board is the hard stopping cap.
+- The configured tile-coverage threshold has been reached.
+- Both diagonals, Column D, and Row 4 are complete.
+- The player has manually marked all configured notable individual-tile rewards as seen or claimed.
 
-Do not silently convert leaves, star candy, and certificates into one score. Report those totals separately, alongside bingo count and priority-line completion. Only use a combined reward score when the user has explicitly chosen conversion values.
+These conditions produce advice, not an automatic skip. The player may skip earlier. Covering the whole board is the natural upper limit if the player chooses to continue.
+
+The engine does not know the locations of shuffled special-reward tiles. The player records when those rewards appear in the actual game; the planner must not imply that it has discovered their locations. Keep leaves, star candy, certificates, and tile rewards separate unless the player explicitly supplies conversion values.
 
 ### 2. Give strategies one shared interface
 
-A strategy receives the current board, hand piece, stored piece, piece rates, and end-goal context, then chooses which available piece to place and where. The end goal decides when a game ends; it should not be baked into a strategy's identity. This lets the same strategy be tested against multiple goals.
+A strategy receives the current board, hand piece, stored piece, piece rates, and which notable rewards the player has recorded. It chooses which available piece to place and where. Skip readiness is shown separately from strategy identity.
 
 ### 3. Build the deterministic simulator
 
-The simulator applies the real rules: placements, overlap, hand/storage swaps, random draws, and the selected stopping condition. Use a seed so a complete piece sequence can be replayed exactly.
+The simulator applies the real rules: placements, overlap, hand/storage swaps, random piece draws, randomly assigned notable reward locations, and the skip-suggestion policy. Use a seed so the same complete game can be replayed exactly.
 
-When comparing strategies, give every strategy the same initial state and the same piece sequence. The simulator is an evaluation harness; it measures strategies but does not automatically invent a better one.
+When comparing strategies, give every strategy the same initial state, hidden reward assignment, and piece sequence. The simulator is an evaluation tool; it measures strategies but does not automatically invent a better one.
 
 ### 4. Establish the baselines
 
@@ -80,23 +83,23 @@ Compare at least:
 - The current immediate/priority heuristic
 - The current one-draw adaptive heuristic
 
-Track complete-game bingo counts, separate resource totals, priority lines completed, tiles covered, and whether/when the selected goal was reached. Test both configured goals and varied piece distributions.
+Track complete-game bingo counts, separate reward totals, priority lines completed, notable rewards collected, tiles covered, and whether/when the skip suggestion became valid. Test varied piece distributions and hidden reward layouts.
 
 ### 5. Add full-game planning
 
-Once the simulator is trusted, evaluate each candidate move with future rollouts through the selected end goal:
+Once the simulator is trusted, evaluate each candidate move with future rollouts through skip readiness or the full-board cap:
 
 1. Apply a candidate placement.
 2. Draw possible future pieces according to the configured rates.
 3. Let the strategy choose placements, including free hand/storage swaps.
-4. Continue until the goal's stopping condition is met.
+4. Continue until the skip-suggestion conditions are met or the board is full.
 5. Average the final outcome vector across many rollouts.
 
 Use bounded Monte Carlo rollouts or beam search rather than assuming exhaustive search is feasible. The same simulator transition rules should power both offline comparisons and live full-game recommendations.
 
 ### 6. Validate on unseen games
 
-Use separate seeded sequences for tuning and final evaluation. Compare the full-game planner with the baselines across both goals and multiple piece distributions. A strategy is better when it improves repeatable game outcomes, not merely because its internal score is higher.
+Use separate seeded games for tuning and final evaluation. Compare the full-board planner with the baselines across multiple piece distributions and hidden reward layouts. A strategy is better when it improves repeatable game outcomes, not merely because its internal score is higher.
 
 ## What Not to Do Yet
 
