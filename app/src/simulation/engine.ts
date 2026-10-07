@@ -82,6 +82,28 @@ export type SimulationComparison = {
   results: SimulationResult[]
 }
 
+export type SimulationMove = {
+  turn: number
+  hand: PieceType
+  stored: PieceType | null
+  placed: PieceType
+  center: Position
+  board: Board
+  newCells: Position[]
+  overlaps: Position[]
+  newBingos: string[]
+  rewardPickups: { row: number; col: number; type: 'coin' | 'certificate' }[]
+  revealedRewards: { row: number; col: number; type: 'coin' | 'certificate' }[]
+  coveredTiles: number
+  bingos: number
+}
+
+export type SimulationReplay = {
+  seed: number
+  trial: number
+  strategies: { strategy: SimulationStrategyId; moves: SimulationMove[] }[]
+}
+
 type Random = () => number
 
 type TrialScenario = {
@@ -317,6 +339,7 @@ const simulateGame = (
   rates: PieceRates,
   priorities: PriorityWeights,
   skipThreshold: number,
+  recordMoves = false,
 ) => {
   let board = createEmptyBoard()
   let hand = scenario.draws[0]
@@ -326,21 +349,59 @@ const simulateGame = (
   let certificateReward = false
   let thresholdSnapshot: GameSnapshot | null = null
   let finalSnapshot: GameSnapshot | null = null
+  const moves: SimulationMove[] = []
+  const revealedRewards = new Map<number, 'coin' | 'certificate'>()
 
   while (turns < scenario.draws.length) {
     const move = chooseMove(strategy, board, hand, stored, rates, priorities)
     if (!move) break
 
+    const completedBefore = new Set(getBoardSummary(board).completedLines.map((line) => line.id))
+    const handBefore = hand
+    const storedBefore = stored
     board = placePiece(board, move.piece, move.center)
     turns += 1
+    const rewardPickups: SimulationMove['rewardPickups'] = []
 
     for (const cell of move.delta.newCells) {
       const tileId = cell.row * BOARD_SIZE + cell.col
-      if (scenario.coinTiles.has(tileId)) coinRewards += 1
-      if (scenario.certificateTile === tileId) certificateReward = true
+      if (scenario.coinTiles.has(tileId)) {
+        coinRewards += 1
+        rewardPickups.push({ ...cell, type: 'coin' })
+        revealedRewards.set(tileId, 'coin')
+      }
+      if (scenario.certificateTile === tileId) {
+        certificateReward = true
+        rewardPickups.push({ ...cell, type: 'certificate' })
+        revealedRewards.set(tileId, 'certificate')
+      }
     }
 
     const snapshot = makeSnapshot(board, turns, coinRewards, certificateReward)
+    if (recordMoves) {
+      const summary = getBoardSummary(board)
+      moves.push({
+        turn: turns,
+        hand: handBefore,
+        stored: storedBefore,
+        placed: move.piece,
+        center: move.center,
+        board,
+        newCells: move.delta.newCells,
+        overlaps: move.delta.overlaps,
+        newBingos: summary.completedLines
+          .filter((line) => !completedBefore.has(line.id))
+          .map((line) => line.label),
+        rewardPickups,
+        revealedRewards: Array.from(revealedRewards, ([tileId, type]) => ({
+          row: Math.floor(tileId / BOARD_SIZE),
+          col: tileId % BOARD_SIZE,
+          type,
+        })),
+        coveredTiles: snapshot.coveredTiles,
+        bingos: snapshot.bingos,
+      })
+    }
     if (thresholdSnapshot === null && snapshot.coveredTiles >= skipThreshold) {
       thresholdSnapshot = snapshot
     }
@@ -362,7 +423,34 @@ const simulateGame = (
 
   finalSnapshot ??= makeSnapshot(board, turns, coinRewards, certificateReward)
   thresholdSnapshot ??= finalSnapshot
-  return { thresholdSnapshot, finalSnapshot }
+  return { thresholdSnapshot, finalSnapshot, moves }
+}
+
+export const runSimulationReplay = (
+  input: SimulationInput,
+  trial: number,
+): SimulationReplay => {
+  const rates = normalizeRates(input.pieceRates)
+  const priorities = input.priorityWeights ?? DEFAULT_PRIORITY_WEIGHTS
+  const trialCount = Math.max(1, Math.min(1000, Math.floor(input.trials)))
+  const selectedTrial = Math.max(1, Math.min(trialCount, Math.floor(trial)))
+  const scenario = makeScenario(input.seed, selectedTrial - 1, rates)
+
+  return {
+    seed: input.seed,
+    trial: selectedTrial,
+    strategies: [...new Set(input.strategies)].map((strategy) => ({
+      strategy,
+      moves: simulateGame(
+        strategy,
+        scenario,
+        rates,
+        priorities,
+        input.skipThreshold,
+        true,
+      ).moves,
+    })),
+  }
 }
 
 const average = (values: number[]) =>

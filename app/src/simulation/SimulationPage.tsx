@@ -1,8 +1,12 @@
 ﻿import { useEffect, useRef, useState } from 'react'
-import type { PieceRates, PriorityWeights } from '../game'
+import { BOARD_SIZE, createEmptyBoard, type PieceRates, type PriorityWeights, type Position } from '../game'
 import {
+  runSimulationReplay,
   SIMULATION_STRATEGIES,
   type SimulationComparison,
+  type SimulationInput,
+  type SimulationMove,
+  type SimulationReplay,
   type SimulationStrategyId,
 } from './engine'
 
@@ -19,6 +23,42 @@ const INITIAL_STRATEGIES: SimulationStrategyId[] = [
 ]
 
 const formatAverage = (value: number, digits = 1) => value.toFixed(digits)
+const containsCell = (cells: Position[], row: number, col: number) =>
+  cells.some((cell) => cell.row === row && cell.col === col)
+
+function ReplayBoard({ move }: { move: SimulationMove | null }) {
+  const board = move?.board ?? createEmptyBoard()
+  const recentCells = move?.newCells ?? []
+  const overlaps = move?.overlaps ?? []
+  const rewards = new Map(
+    (move?.revealedRewards ?? []).map((reward) => [`${reward.row}-${reward.col}`, reward.type]),
+  )
+
+  return (
+    <div className="replay-board" role="img" aria-label="Board after selected turn">
+      {Array.from({ length: BOARD_SIZE * BOARD_SIZE }, (_, index) => {
+        const row = Math.floor(index / BOARD_SIZE)
+        const col = index % BOARD_SIZE
+        const isNew = containsCell(recentCells, row, col)
+        const isOverlap = containsCell(overlaps, row, col)
+        const reward = rewards.get(`${row}-${col}`)
+        const classes = [
+          'replay-cell',
+          board[row][col] ? 'is-covered' : '',
+          isNew ? `is-new piece-${move?.placed}` : '',
+          isOverlap ? 'is-overlap' : '',
+          reward ? `has-${reward}` : '',
+        ].filter(Boolean).join(' ')
+
+        return (
+          <span className={classes} key={index}>
+            {reward && <i aria-label={reward === 'coin' ? '100K coin found' : '10 certificates found'}>{reward === 'coin' ? '$' : 'C'}</i>}
+          </span>
+        )
+      })}
+    </div>
+  )
+}
 
 export function SimulationPage({
   pieceRates,
@@ -31,12 +71,46 @@ export function SimulationPage({
   const [comparison, setComparison] = useState<SimulationComparison | null>(null)
   const [isRunning, setIsRunning] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [activeView, setActiveView] = useState<'statistics' | 'replay'>('statistics')
+  const [lastRunInput, setLastRunInput] = useState<SimulationInput | null>(null)
+  const [replayTrialInput, setReplayTrialInput] = useState('1')
+  const [replay, setReplay] = useState<SimulationReplay | null>(null)
+  const [replayTurn, setReplayTurn] = useState(0)
+  const [isPlaying, setIsPlaying] = useState(false)
   const workerRef = useRef<Worker | null>(null)
 
   useEffect(() => () => workerRef.current?.terminate(), [])
 
+  const maxReplayTurn = replay
+    ? Math.max(0, ...replay.strategies.map((item) => item.moves.length))
+    : 0
+
+  useEffect(() => {
+    if (!isPlaying || replayTurn >= maxReplayTurn) return
+    const timer = window.setTimeout(() => {
+      const nextTurn = Math.min(maxReplayTurn, replayTurn + 1)
+      setReplayTurn(nextTurn)
+      if (nextTurn >= maxReplayTurn) setIsPlaying(false)
+    }, 700)
+    return () => window.clearTimeout(timer)
+  }, [isPlaying, maxReplayTurn, replayTurn])
+
   const runComparison = () => {
     if (selectedStrategies.length === 0 || isRunning) return
+    const input: SimulationInput = {
+      strategies: selectedStrategies,
+      trials: Math.max(1, Math.min(1000, Math.floor(Number(trialCount) || 1))),
+      seed: Number.isFinite(Number(seedValue)) ? Math.floor(Number(seedValue)) : 1,
+      skipThreshold,
+      pieceRates,
+      priorityWeights,
+    }
+    setLastRunInput(input)
+    setComparison(null)
+    setReplay(null)
+    setReplayTurn(0)
+    setIsPlaying(false)
+    setActiveView('statistics')
     setIsRunning(true)
     setError(null)
     const worker = new Worker(new URL('./simulation.worker.ts', import.meta.url), { type: 'module' })
@@ -54,14 +128,22 @@ export function SimulationPage({
       if (workerRef.current === worker) workerRef.current = null
       setIsRunning(false)
     }
-    worker.postMessage({
-      strategies: selectedStrategies,
-      trials: Math.max(1, Math.min(1000, Math.floor(Number(trialCount) || 1))),
-      seed: Number.isFinite(Number(seedValue)) ? Math.floor(Number(seedValue)) : 1,
-      skipThreshold,
-      pieceRates,
-      priorityWeights,
-    })
+    worker.postMessage(input)
+  }
+
+  const openReplay = () => {
+    if (!lastRunInput) return
+    const trial = Math.max(1, Math.min(lastRunInput.trials, Math.floor(Number(replayTrialInput) || 1)))
+    setReplayTrialInput(String(trial))
+    setReplay(runSimulationReplay(lastRunInput, trial))
+    setReplayTurn(0)
+    setIsPlaying(false)
+    setActiveView('replay')
+  }
+
+  const changeReplayTurn = (turn: number) => {
+    setIsPlaying(false)
+    setReplayTurn(turn)
   }
 
   const toggleStrategy = (strategy: SimulationStrategyId, checked: boolean) => {
@@ -117,7 +199,7 @@ export function SimulationPage({
           </label>
           <div className="simulation-rates" aria-label="Piece distribution used">
             <span>Piece rates</span>
-            <strong>Plus {pieceRates.plus}% · Cross {pieceRates.cross}% · H {pieceRates.horizontal}% · V {pieceRates.vertical}% · Square {pieceRates.square}%</strong>
+            <strong>Plus {pieceRates.plus}% · Cross {pieceRates.cross}% · Horizontal {pieceRates.horizontal}% · Vertical {pieceRates.vertical}% · Square {pieceRates.square}%</strong>
             <small>Change rates in planner settings.</small>
           </div>
         </div>
@@ -161,8 +243,13 @@ export function SimulationPage({
 
       {error && <p className="simulation-error" role="alert">{error}</p>}
 
-      {comparison ? (
-        <section className="simulation-results" aria-live="polite">
+      <div className="simulation-tabs" role="tablist" aria-label="Simulation results view">
+        <button type="button" role="tab" aria-selected={activeView === 'statistics'} className={activeView === 'statistics' ? 'is-active' : ''} onClick={() => setActiveView('statistics')}>Statistics</button>
+        <button type="button" role="tab" aria-selected={activeView === 'replay'} className={activeView === 'replay' ? 'is-active' : ''} disabled={!lastRunInput} onClick={() => setActiveView('replay')}>Replay</button>
+      </div>
+
+      {activeView === 'statistics' && (comparison ? (
+        <section className="simulation-results" role="tabpanel" aria-live="polite">
           <div className="simulation-results-heading">
             <div>
               <p className="section-kicker">RESULTS</p>
@@ -198,10 +285,88 @@ export function SimulationPage({
           </div>
         </section>
       ) : (
-        <div className="simulation-empty">
+        <div className="simulation-empty" role="tabpanel">
           <strong>No results yet</strong>
           <span>Choose the strategies to compare, then run shared trials.</span>
         </div>
+      ))}
+
+      {activeView === 'replay' && (
+        <section className="simulation-replay" role="tabpanel" aria-label="Strategy replay">
+          <div className="replay-toolbar">
+            <label className="simulation-field replay-trial-field">
+              <span>Trial to replay</span>
+              <input
+                type="number"
+                min="1"
+                max={lastRunInput?.trials ?? 1}
+                step="1"
+                value={replayTrialInput}
+                onChange={(event) => setReplayTrialInput(event.currentTarget.value)}
+              />
+            </label>
+            <button className="primary-button replay-load-button" type="button" disabled={!lastRunInput} onClick={openReplay}>Load shared trial</button>
+            {replay && <span className="replay-seed">Seed {replay.seed} · Trial {replay.trial}</span>}
+          </div>
+
+          {!replay ? (
+            <div className="simulation-empty">
+              <strong>{lastRunInput ? 'Choose a trial to replay' : 'Run a simulation first'}</strong>
+              <span>{lastRunInput ? 'Every strategy will replay the same draws and reward layout for that trial.' : 'The replay uses the exact seed, rates, threshold, and strategies from the latest run.'}</span>
+            </div>
+          ) : (
+            <>
+              <div className="replay-controls">
+                <div className="replay-step-buttons">
+                  <button type="button" aria-label="Previous turn" title="Previous turn" disabled={replayTurn === 0} onClick={() => changeReplayTurn(Math.max(0, replayTurn - 1))}>←</button>
+                  <button type="button" aria-label={isPlaying ? 'Pause replay' : 'Play replay'} title={isPlaying ? 'Pause replay' : 'Play replay'} onClick={() => {
+                    if (replayTurn >= maxReplayTurn) setReplayTurn(0)
+                    setIsPlaying((playing) => !playing)
+                  }}>{isPlaying ? 'Ⅱ' : '▶'}</button>
+                  <button type="button" aria-label="Next turn" title="Next turn" disabled={replayTurn >= maxReplayTurn} onClick={() => changeReplayTurn(Math.min(maxReplayTurn, replayTurn + 1))}>→</button>
+                </div>
+                <label className="replay-timeline">
+                  <span>Turn {replayTurn} <small>/ {maxReplayTurn}</small></span>
+                  <input type="range" min="0" max={maxReplayTurn} step="1" value={replayTurn} onChange={(event) => changeReplayTurn(Number(event.currentTarget.value))} />
+                </label>
+              </div>
+
+              <div className="replay-strategy-grid">
+                {replay.strategies.map((strategyReplay) => {
+                  const strategy = SIMULATION_STRATEGIES.find((item) => item.id === strategyReplay.strategy)!
+                  const visibleTurns = Math.min(replayTurn, strategyReplay.moves.length)
+                  const currentMove = visibleTurns > 0 ? strategyReplay.moves[visibleTurns - 1] : null
+                  const finished = replayTurn >= strategyReplay.moves.length
+                  return (
+                    <article className="replay-strategy" key={strategyReplay.strategy}>
+                      <header>
+                        <h3>{strategy.name}</h3>
+                        <span>{finished && strategyReplay.moves.length > 0 ? `Finished on turn ${strategyReplay.moves.length}` : 'In progress'}</span>
+                      </header>
+                      <ReplayBoard move={currentMove} />
+                      <div className="replay-board-stats">
+                        <span><strong>{currentMove?.coveredTiles ?? 0}</strong> tiles</span>
+                        <span><strong>{currentMove?.bingos ?? 0}</strong> bingos</span>
+                        <span><strong>{visibleTurns}</strong> turns</span>
+                      </div>
+                      {currentMove ? (
+                        <div className="replay-move-detail" aria-live="polite">
+                          <strong>Turn {currentMove.turn}: {currentMove.placed} at {String.fromCharCode(65 + currentMove.center.col)}{currentMove.center.row + 1}</strong>
+                          <span>Hand: {currentMove.hand}{currentMove.stored ? ` · Stored: ${currentMove.stored}` : ''} · {currentMove.newCells.length} new tiles · {currentMove.overlaps.length} overlaps</span>
+                          {currentMove.newBingos.length > 0 && <span className="replay-bingo">Bingo: {currentMove.newBingos.join(', ')}</span>}
+                          {currentMove.rewardPickups.length > 0 && <span className="replay-pickup">Found: {currentMove.rewardPickups.map((reward) => reward.type === 'coin' ? '100K coin' : '10 certificates').join(', ')}</span>}
+                          {currentMove.newBingos.length === 0 && currentMove.rewardPickups.length === 0 && <span>No bingo or notable tile this turn.</span>}
+                        </div>
+                      ) : (
+                        <div className="replay-move-detail"><strong>Before the first move</strong><span>Advance the shared timeline to compare opening placements.</span></div>
+                      )}
+                    </article>
+                  )
+                })}
+              </div>
+            </>
+          )}
+        </section>
       )}
     </section>
   )
