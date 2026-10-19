@@ -180,11 +180,11 @@ export function BoardPanel({ session }: { session: BoardPanelProps }) {
         <span><i className="legend-suggested" /> Recommendation</span>
         <span><i className="legend-overlap" /> Overlap</span>
       </div>
-      <p className="board-hint">Click to preview · Click again to place</p>
+      <p className="board-hint">Click to preview | Click again to place</p>
       <p className="board-scroll-note">Scroll over the board to cycle the hand piece.</p>
       <div className="control-note">
-        <span>Hotkeys: 1–5 piece · 7–0 candidates</span>
-        <span>S swap · Z undo · R restart · P place · Esc clear preview</span>
+        <span>1–5: Select Piece | 7–0: Select Candidate</span>
+        <span>S: Swap | Z: Undo | P: Place | ESC: Clear Preview</span>
       </div>
     </section>
   )

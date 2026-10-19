@@ -322,21 +322,6 @@ export function useBingoSession() {
         return
       }
 
-      if (key === 'r') {
-        const emptyBoard = createEmptyBoard()
-        setBoard(emptyBoard)
-        setPieceType('cross')
-        setSlotPieceType(null)
-        setHistory([])
-        setSelectedPosition(getTopAdaptiveCenter(emptyBoard, 'cross', null, pieceRates, priorityWeights))
-        setCursorPosition(null)
-        setHoveredPosition(null)
-        setDismissedHoverPosition(null)
-        setLastBoardClick(null)
-        event.preventDefault()
-        return
-      }
-
       if (key === 'p') {
         const center = hoveredPosition ?? selectedPosition
         if (center && pieceType) {
