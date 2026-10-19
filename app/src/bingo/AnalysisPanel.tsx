@@ -20,6 +20,8 @@ type AnalysisPanelProps = Pick<
   | 'shouldSwapForHigherCoverage'
   | 'slotPieceType'
   | 'storedRecommendation'
+  | 'trackingMode'
+  | 'setTrackingMode'
   | 'toggleRecommendation'
 >
 
@@ -77,6 +79,8 @@ export function AnalysisPanel({ session }: { session: AnalysisPanelProps }) {
     shouldSwapForHigherCoverage,
     slotPieceType,
     storedRecommendation,
+    trackingMode,
+    setTrackingMode,
     toggleRecommendation,
   } = session
 
@@ -221,7 +225,20 @@ export function AnalysisPanel({ session }: { session: AnalysisPanelProps }) {
             : 'Add a piece to storage to compare full-board plans for both available pieces.'}
         </div>
       </section>
-
+      <div className="tracking-mode-control">
+        <div>
+          <strong>Piece tracking</strong>
+          <span>{trackingMode ? 'Planner placements are counted' : 'Sandbox placements are not counted'}</span>
+        </div>
+        <button
+          className={`tracking-mode-button ${trackingMode ? 'is-on' : ''}`}
+          type="button"
+          aria-pressed={trackingMode}
+          onClick={() => setTrackingMode(!trackingMode)}
+        >
+          {trackingMode ? 'Tracking' : 'Sandbox'}
+        </button>
+      </div>
     </aside>
   )
 }

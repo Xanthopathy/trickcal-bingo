@@ -5,11 +5,12 @@ import { PieceControls } from './bingo/PieceControls'
 import { SettingsPopover } from './bingo/SettingsPopover'
 import { useBingoSession } from './bingo/useBingoSession'
 import { SimulationPage } from './simulation/SimulationPage'
+import { TrackingPage } from './tracking/TrackingPage'
 import './App.css'
 
 function App() {
   const session = useBingoSession()
-  const [activePage, setActivePage] = useState<'planner' | 'simulation'>('planner')
+  const [activePage, setActivePage] = useState<'planner' | 'simulation' | 'tracking'>('planner')
 
   return (
     <main className="app-shell">
@@ -35,6 +36,14 @@ function App() {
           >
             Simulation
           </button>
+          <button
+            className={activePage === 'tracking' ? 'is-active' : ''}
+            type="button"
+            aria-current={activePage === 'tracking' ? 'page' : undefined}
+            onClick={() => setActivePage('tracking')}
+          >
+            Tracking
+          </button>
         </nav>
         <div className="header-actions">
           <span className="local-badge"><span className="status-dot" /> Saved in this browser</span>
@@ -49,16 +58,24 @@ function App() {
           <AnalysisPanel session={session} />
         </section>
       ) : (
-        <SimulationPage
-          pieceRates={session.pieceRates}
-          priorityWeights={session.priorityWeights}
-          skipThreshold={session.skipThreshold}
-        />
+        activePage === 'simulation' ? (
+          <SimulationPage
+            pieceRates={session.pieceRates}
+            priorityWeights={session.priorityWeights}
+            skipThreshold={session.skipThreshold}
+          />
+        ) : (
+          <TrackingPage
+            trackedPieceCounts={session.trackedPieceCounts}
+            trackingMode={session.trackingMode}
+            updateTrackedPieceCount={session.updateTrackedPieceCount}
+          />
+        )
       )}
 
       <footer className="page-footer">
-        <span>{activePage === 'planner' ? 'Sampled lookahead planner · Prototype' : 'Shared-sequence strategy comparison · Prototype'}</span>
-        <span>{activePage === 'planner' ? 'The planner’s draw horizon follows the patience setting; projections are estimates.' : 'Simulated results are estimates and depend on the configured piece rates.'}</span>
+        <span>{activePage === 'planner' ? 'Sampled lookahead planner · Prototype' : activePage === 'simulation' ? 'Shared-sequence strategy comparison · Prototype' : 'Piece frequency tracker · Local data'}</span>
+        <span>{activePage === 'planner' ? 'The planner’s draw horizon follows the patience setting; projections are estimates.' : activePage === 'simulation' ? 'Simulated results are estimates and depend on the configured piece rates.' : 'Rates are calculated from the recorded piece amounts.'}</span>
       </footer>
     </main>
   )

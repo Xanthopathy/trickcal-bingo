@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   BOARD_SIZE,
   DEFAULT_PIECE_RATES,
@@ -25,6 +25,19 @@ import {
 
 const STORAGE_KEY = 'bingo-adaptive-board-v1'
 const DEFAULT_SKIP_THRESHOLD = 39
+const DEFAULT_TRACKED_PIECE_COUNTS: Record<PieceType, number> = {
+  plus: 33,
+  cross: 29,
+  square: 7,
+  horizontal: 12,
+  vertical: 13,
+}
+
+type PlacementHistoryEntry = {
+  board: Board
+  pieceType: PieceType
+  wasTracked: boolean
+}
 
 type SavedState = {
   board: Board
@@ -34,6 +47,8 @@ type SavedState = {
   priorityWeights: PriorityWeights
   skipThreshold: number
   plannerPatience: PlannerPatience
+  trackedPieceCounts: Record<PieceType, number>
+  trackingMode: boolean
 }
 
 const isBoard = (value: unknown): value is Board =>
@@ -60,6 +75,17 @@ const isPieceRates = (value: unknown): value is PieceRates => {
   )
 }
 
+const isPieceCounts = (value: unknown): value is Record<PieceType, number> => {
+  if (typeof value !== 'object' || value === null) return false
+  const counts = value as Record<string, unknown>
+  return PIECE_OPTIONS.every(
+    ({ type }) =>
+      typeof counts[type] === 'number' &&
+      Number.isInteger(counts[type]) &&
+      counts[type] >= 0,
+  )
+}
+
 const isPriorityWeights = (value: unknown): value is PriorityWeights => {
   if (typeof value !== 'object' || value === null) return false
   const weights = value as Record<string, unknown>
@@ -82,6 +108,8 @@ const defaultSavedState = (): SavedState => ({
   priorityWeights: { ...DEFAULT_PRIORITY_WEIGHTS },
   skipThreshold: DEFAULT_SKIP_THRESHOLD,
   plannerPatience: DEFAULT_PLANNER_PATIENCE,
+  trackedPieceCounts: { ...DEFAULT_TRACKED_PIECE_COUNTS },
+  trackingMode: false,
 })
 
 const readSavedState = (): SavedState => {
@@ -126,6 +154,14 @@ const readSavedState = (): SavedState => {
           'plannerPatience' in parsed && isPlannerPatience(parsed.plannerPatience)
             ? parsed.plannerPatience
             : DEFAULT_PLANNER_PATIENCE,
+        trackedPieceCounts:
+          'trackedPieceCounts' in parsed && isPieceCounts(parsed.trackedPieceCounts)
+            ? parsed.trackedPieceCounts
+            : { ...DEFAULT_TRACKED_PIECE_COUNTS },
+        trackingMode:
+          'trackingMode' in parsed && typeof parsed.trackingMode === 'boolean'
+            ? parsed.trackingMode
+            : false,
       }
     }
   } catch {
@@ -144,8 +180,10 @@ export function useBingoSession() {
   const [priorityWeights, setPriorityWeights] = useState(savedState.priorityWeights)
   const [skipThreshold, setSkipThreshold] = useState(savedState.skipThreshold)
   const [plannerPatience, setPlannerPatience] = useState(savedState.plannerPatience)
+  const [trackedPieceCounts, setTrackedPieceCounts] = useState(savedState.trackedPieceCounts)
+  const [trackingMode, setTrackingMode] = useState(savedState.trackingMode)
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [history, setHistory] = useState<Board[]>([])
+  const [history, setHistory] = useState<PlacementHistoryEntry[]>([])
   const [lastBoardClick, setLastBoardClick] = useState<Position | null>(null)
   const [hoveredPosition, setHoveredPosition] = useState<Position | null>(null)
   const [cursorPosition, setCursorPosition] = useState<Position | null>(null)
@@ -159,6 +197,38 @@ export function useBingoSession() {
   const boardGridRef = useRef<HTMLDivElement>(null)
   const plannerWorkerRef = useRef<Worker | null>(null)
   const plannerKey = JSON.stringify({ board, pieceType, slotPieceType, pieceRates, plannerPatience })
+
+  const recordPlacement = useCallback((placedPieceType: PieceType) => {
+    setHistory((previous) => [...previous, {
+      board,
+      pieceType: placedPieceType,
+      wasTracked: trackingMode,
+    }].slice(-30))
+    if (trackingMode) {
+      setTrackedPieceCounts((previous) => ({
+        ...previous,
+        [placedPieceType]: previous[placedPieceType] + 1,
+      }))
+    }
+  }, [board, trackingMode])
+
+  const undo = useCallback(() => {
+    const previousPlacement = history.at(-1)
+    if (!previousPlacement) return
+    setBoard(previousPlacement.board)
+    setHistory((previous) => previous.slice(0, -1))
+    if (previousPlacement.wasTracked) {
+      setTrackedPieceCounts((previous) => ({
+        ...previous,
+        [previousPlacement.pieceType]: Math.max(0, previous[previousPlacement.pieceType] - 1),
+      }))
+    }
+    setSelectedPosition(null)
+    setCursorPosition(null)
+    setHoveredPosition(null)
+    setDismissedHoverPosition(null)
+    setLastBoardClick(null)
+  }, [history])
 
   useEffect(() => {
     if (!pieceType) return
@@ -235,12 +305,12 @@ export function useBingoSession() {
     try {
       window.localStorage.setItem(
         STORAGE_KEY,
-        JSON.stringify({ board, pieceType, slotPieceType, pieceRates, priorityWeights, skipThreshold, plannerPatience }),
+        JSON.stringify({ board, pieceType, slotPieceType, pieceRates, priorityWeights, skipThreshold, plannerPatience, trackedPieceCounts, trackingMode }),
       )
     } catch {
       // Continue using the board if browser storage is unavailable.
     }
-  }, [board, pieceType, slotPieceType, pieceRates, priorityWeights, skipThreshold, plannerPatience])
+  }, [board, pieceType, slotPieceType, pieceRates, priorityWeights, skipThreshold, plannerPatience, trackedPieceCounts, trackingMode])
 
   useEffect(() => {
     const boardGrid = boardGridRef.current
@@ -315,16 +385,7 @@ export function useBingoSession() {
       }
 
       if (key === 'z') {
-        const previousBoard = history.at(-1)
-        if (previousBoard) {
-          setBoard(previousBoard)
-          setHistory((previous) => previous.slice(0, -1))
-          setSelectedPosition(null)
-          setCursorPosition(null)
-          setHoveredPosition(null)
-          setDismissedHoverPosition(null)
-          setLastBoardClick(null)
-        }
+        undo()
         event.preventDefault()
         return
       }
@@ -332,7 +393,7 @@ export function useBingoSession() {
       if (key === 'p') {
         const center = hoveredPosition ?? selectedPosition
         if (center && pieceType) {
-          setHistory((previous) => [...previous, board].slice(-30))
+          recordPlacement(pieceType)
           const nextBoard = placePiece(board, pieceType, center)
           setBoard(nextBoard)
           setPieceType(null)
@@ -375,11 +436,11 @@ export function useBingoSession() {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [board, cursorPosition, history, hoveredPosition, pieceType, recommendations, selectedPosition, slotPieceType])
+  }, [board, cursorPosition, hoveredPosition, pieceType, recommendations, recordPlacement, selectedPosition, slotPieceType, undo])
 
   const commitPlacement = (center: Position | null) => {
     if (!center || !pieceType) return
-    setHistory((previous) => [...previous, board].slice(-30))
+    recordPlacement(pieceType)
     const nextBoard = placePiece(board, pieceType, center)
     setBoard(nextBoard)
     setPieceType(null)
@@ -403,18 +464,6 @@ export function useBingoSession() {
     setHoveredPosition(null)
     setDismissedHoverPosition(null)
     setSelectedPosition(center)
-  }
-
-  const undo = () => {
-    const previousBoard = history.at(-1)
-    if (!previousBoard) return
-    setBoard(previousBoard)
-    setHistory((previous) => previous.slice(0, -1))
-    setSelectedPosition(null)
-    setCursorPosition(null)
-    setHoveredPosition(null)
-    setDismissedHoverPosition(null)
-    setLastBoardClick(null)
   }
 
   const startNewBoard = () => {
@@ -469,6 +518,11 @@ export function useBingoSession() {
     setLastBoardClick(null)
   }
 
+  const updateTrackedPieceCount = (piece: PieceType, value: number) => {
+    const count = Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0
+    setTrackedPieceCounts((previous) => ({ ...previous, [piece]: count }))
+  }
+
   const updatePieceRate = (updatedPiece: PieceType, value: number) => {
     const nextRates = {
       ...pieceRates,
@@ -507,6 +561,8 @@ export function useBingoSession() {
     setBoard(emptyBoard)
     setPieceType('cross')
     setSlotPieceType(null)
+    setTrackedPieceCounts({ ...DEFAULT_TRACKED_PIECE_COUNTS })
+    setTrackingMode(false)
     resetSettings()
     setHistory([])
     setSelectedPosition(null)
@@ -530,6 +586,8 @@ export function useBingoSession() {
     isPlannerThinking,
     pieceRates,
     pieceType,
+    trackedPieceCounts,
+    trackingMode,
     plannerError,
     plannerPatience,
     priorityWeights,
@@ -552,6 +610,8 @@ export function useBingoSession() {
     setDismissedHoverPosition,
     setHoveredPosition,
     setPieceRates,
+    updateTrackedPieceCount,
+    setTrackingMode,
     setPriorityWeights,
     setPlannerPatience,
     setSelectedPosition,
