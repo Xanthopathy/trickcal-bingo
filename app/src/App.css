@@ -286,11 +286,9 @@
 
 .piece-section,
 .slot-section,
-.recommendation-section,
-.lines-section { padding: 11px 0; border-bottom: 1px solid var(--line); }
+.recommendation-section { padding: 11px 0; border-bottom: 1px solid var(--line); }
 .piece-controls .piece-section { padding-top: 11px; }
-.piece-controls .slot-section,
-.board-analysis .lines-section { border-bottom: 0; }
+.piece-controls .slot-section { border-bottom: 0; }
 .board-analysis .recommendation-section { padding-top: 0; }
 .piece-name,
 .slot-state { color: #dce5dd; font-size: 13px; }
@@ -360,16 +358,6 @@
 .alternative-summary { grid-area: summary; color: #d3ddd4; font-size: 12px; }
 .alternative-arrow { grid-area: arrow; color: #d4c0ef; font-size: 15px; }
 
-.lines-section { padding-top: 12px; }
-.line-count { color: #aee5b7; font-size: 15px; font-weight: 800; }
-.completed-list,
-.progress-list { display: grid; gap: 7px; margin: 9px 0 0; padding: 0; list-style: none; }
-.completed-list li { display: flex; justify-content: space-between; gap: 10px; color: #b7edc0; font-size: 12px; }
-.completed-list strong { font-size: 11px; }
-.progress-list li > div { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 3px; color: #eef2ee; font-size: 12px; }
-.progress-list li > div span:last-child { color: #cdd6ce; }
-.line-progress-track { display: block; height: 4px; overflow: hidden; border-radius: 4px; background: #414a43; }
-.line-progress-track i { display: block; height: 100%; border-radius: inherit; background: #70c68a; }
 .empty-note { margin: 10px 0 0; color: #e1e7e2; font-size: 13px; line-height: 1.4; }
 .page-footer { display: flex; justify-content: space-between; gap: 12px; padding: 8px 2px 0; color: #b9c4bc; font-size: 11px; }
 

@@ -18,6 +18,7 @@ const FUTURE_TURNS = 4
 const BEAM_WIDTH = 2
 const ACTIONS_PER_PIECE = 2
 const COVERAGE_VALUE = 1_000_000
+export const MIN_MEANINGFUL_COVERAGE_DIFFERENCE = 0.5
 
 export type FullBoardCandidate = AdaptivePlacementCandidate & {
   projectedCoverage: number
@@ -311,13 +312,12 @@ const rankPiecePlans = (
         futureExplanation: `Estimated across ${SAMPLE_COUNT} shared draw samples; bingo rewards and enclosed gaps break coverage ties.`,
       }
     })
-    .sort(
-      (left, right) =>
-        right.score - left.score ||
-        right.projectedCoverage - left.projectedCoverage ||
-        right.newCells - left.newCells ||
-        left.center.row - right.center.row ||
-        left.center.col - right.center.col,
+    .sort((left, right) =>
+      right.score - left.score ||
+      right.projectedCoverage - left.projectedCoverage ||
+      right.newCells - left.newCells ||
+      left.center.row - right.center.row ||
+      left.center.col - right.center.col,
     )
     .slice(0, 4)
 }

@@ -1,11 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  BINGO_LINES,
   BOARD_SIZE,
   DEFAULT_PIECE_RATES,
   DEFAULT_PRIORITY_WEIGHTS,
   canPlacePiece,
-  countLineCells,
   createEmptyBoard,
   getBoardSummary,
   getPlacementCells,
@@ -21,6 +19,7 @@ import {
   type FullBoardCandidate,
   type FullBoardPlannerResult,
 } from './fullBoardPlanner'
+import { MIN_MEANINGFUL_COVERAGE_DIFFERENCE } from './fullBoardPlanner'
 
 const STORAGE_KEY = 'bingo-adaptive-board-v1'
 const DEFAULT_SKIP_THRESHOLD = 39
@@ -193,8 +192,9 @@ export function useBingoSession() {
   const plannerError = plannerResultIsCurrent ? plannerResult.error ?? null : null
   const recommendation = recommendations[0] ?? null
   const storedRecommendation = storedRecommendations[0] ?? null
-  const shouldSwapForHigherAdaptiveValue = Boolean(
-    recommendation && storedRecommendation && storedRecommendation.score > recommendation.score,
+  const shouldSwapForHigherCoverage = Boolean(
+    recommendation && storedRecommendation &&
+    storedRecommendation.projectedCoverage - recommendation.projectedCoverage >= MIN_MEANINGFUL_COVERAGE_DIFFERENCE,
   )
   const activePosition = hoveredPosition ?? selectedPosition ?? null
   const isRecommendationPreview = Boolean(
@@ -205,16 +205,6 @@ export function useBingoSession() {
   )
   const boardSummary = useMemo(() => getBoardSummary(board), [board])
   const { completedLines, coveredTiles: coveredCount } = boardSummary
-  const progressLines = useMemo(
-    () => BINGO_LINES.map((line) => ({
-      line,
-      count: countLineCells(board, line),
-    }))
-      .filter(({ count }) => count > 0 && count < BOARD_SIZE)
-      .sort((left, right) => right.count - left.count)
-      .slice(0, 3),
-    [board],
-  )
   const totalPieceRate = useMemo(
     () => Object.values(pieceRates).reduce((total, rate) => total + rate, 0),
     [pieceRates],
@@ -527,12 +517,11 @@ export function useBingoSession() {
     pieceType,
     plannerError,
     priorityWeights,
-    progressLines,
     recommendation,
     recommendations,
     selectedPosition,
     settingsOpen,
-    shouldSwapForHigherAdaptiveValue,
+    shouldSwapForHigherCoverage,
     skipThreshold,
     slotPieceType,
     storedRecommendation,
