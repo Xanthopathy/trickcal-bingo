@@ -64,7 +64,7 @@ export function PieceControls({ session }: { session: PieceControlsProps }) {
       <section className="piece-section">
         <div className="panel-heading">
           <h2>Piece in hand</h2>
-          {pieceType && <span className="piece-name">{pieceName(pieceType)}</span>}
+          <span className="piece-name">{pieceType ? pieceName(pieceType) : 'None selected'}</span>
         </div>
         <div className="piece-picker" role="group" aria-label="Piece in hand">
           {PIECE_OPTIONS.map((option) => (
