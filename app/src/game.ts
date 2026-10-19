@@ -408,6 +408,7 @@ export const rankPlacements = (
 
   for (const center of centers) {
     if (!canPlacePiece(pieceType, center)) continue
+    if (pieceType === 'square' && getPlacementCells(pieceType, center).length !== PIECES[pieceType].length) continue
 
     const delta = getPlacementDelta(board, pieceType, center)
     const addedCells = new Set(

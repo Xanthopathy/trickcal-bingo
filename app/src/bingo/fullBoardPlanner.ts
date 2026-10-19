@@ -157,6 +157,12 @@ const placementCenters = (piece: PieceType) => {
   if (piece === 'vertical') {
     return Array.from({ length: BOARD_SIZE }, (_, col) => ({ row: 3, col }))
   }
+  if (piece === 'square') {
+    return Array.from({ length: (BOARD_SIZE - 2) ** 2 }, (_, index) => ({
+      row: Math.floor(index / (BOARD_SIZE - 2)) + 1,
+      col: index % (BOARD_SIZE - 2) + 1,
+    }))
+  }
   return Array.from({ length: BOARD_SIZE * BOARD_SIZE }, (_, index) => ({
     row: Math.floor(index / BOARD_SIZE),
     col: index % BOARD_SIZE,
