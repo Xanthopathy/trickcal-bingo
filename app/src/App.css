@@ -327,7 +327,6 @@
 .recommended-move { width: 100%; display: flex; align-items: center; gap: 10px; margin: 10px 0 8px; padding: 9px; border: 1px solid #4d5b50; border-radius: 5px; background: var(--surface-raised); color: inherit; font: inherit; text-align: left; cursor: pointer; transition: border-color 120ms ease, background-color 120ms ease, box-shadow 120ms ease; }
 .recommended-move > strong { flex: none; min-width: 48px; padding: 7px; border-radius: 4px; background: #397349; color: #fff; font-size: 18px; line-height: 1; text-align: center; }
 .recommended-move p { margin: 0; color: var(--text); font-size: 13px; line-height: 1.4; }
-.future-explanation { margin: -3px 0 8px; color: var(--muted); font-size: 11px; line-height: 1.35; }
 .recommended-move:hover,
 .recommended-move:focus-visible,
 .recommended-move.is-selected { border-color: #8bd39a; background: #28342b; box-shadow: 0 0 0 2px rgba(116, 201, 135, 0.3), 0 0 13px rgba(86, 177, 108, 0.2); }
@@ -338,10 +337,12 @@
 .recommended-move.is-hover-dismissed,
 .recommended-move.is-hover-dismissed:hover,
 .recommended-move.is-hover-dismissed:focus-visible { border-color: #4d5b50; background: var(--surface-raised); box-shadow: none; }
-.move-facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 9px; }
-.move-facts > div { display: grid; gap: 2px; padding-left: 8px; border-left: 2px solid #4f7659; }
-.move-facts strong { color: #afe7b8; font-size: 16px; }
-.move-facts span { color: var(--muted); font-size: 11px; }
+.candidate-explanation { display: grid; gap: 7px; margin-top: 10px; padding: 9px 0 0; border-top: 1px solid var(--line); }
+.candidate-explanation-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.candidate-explanation-heading .section-kicker { margin: 0; }
+.candidate-explanation-heading > strong { color: #dce8dd; font-size: 11px; text-align: right; }
+.candidate-explanation > p { margin: 0; color: var(--text); font-size: 12px; line-height: 1.4; }
+.candidate-explanation > small { color: var(--muted); font-size: 10px; line-height: 1.35; }
 .primary-button { width: 100%; min-height: 38px; display: flex; align-items: center; justify-content: space-between; padding: 0 12px; border: 1px solid #5da274; border-radius: 4px; background: var(--green-strong); color: #fff; font-size: 13px; font-weight: 750; cursor: pointer; }
 .primary-button:hover:not(:disabled) { background: #408e54; }
 .primary-button:disabled { background: #56635a; color: #d6ddd7; cursor: default; }

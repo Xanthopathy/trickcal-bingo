@@ -11,7 +11,6 @@ import {
   getEffectiveLineWeight,
   getPlacementCells,
   placePiece,
-  rankAdaptivePlacements,
   type Board,
   type PieceRates,
   type PieceType,
@@ -19,6 +18,10 @@ import {
   type PriorityWeights,
 } from '../game'
 import { PIECE_OPTIONS } from './constants'
+import {
+  type FullBoardCandidate,
+  type FullBoardPlannerResult,
+} from './fullBoardPlanner'
 
 const STORAGE_KEY = 'bingo-adaptive-board-v1'
 const DEFAULT_SKIP_THRESHOLD = 39
@@ -106,10 +109,10 @@ const readSavedState = (): SavedState => {
             : { ...DEFAULT_PRIORITY_WEIGHTS },
         skipThreshold:
           'skipThreshold' in parsed &&
-          typeof parsed.skipThreshold === 'number' &&
-          Number.isInteger(parsed.skipThreshold) &&
-          parsed.skipThreshold >= 1 &&
-          parsed.skipThreshold <= BOARD_SIZE * BOARD_SIZE
+            typeof parsed.skipThreshold === 'number' &&
+            Number.isInteger(parsed.skipThreshold) &&
+            parsed.skipThreshold >= 1 &&
+            parsed.skipThreshold <= BOARD_SIZE * BOARD_SIZE
             ? parsed.skipThreshold === 42
               ? DEFAULT_SKIP_THRESHOLD
               : parsed.skipThreshold
@@ -122,23 +125,6 @@ const readSavedState = (): SavedState => {
 
   return defaultSavedState()
 }
-
-const getTopAdaptiveCenter = (
-  board: Board,
-  pieceType: PieceType | null,
-  storedPieceType: PieceType | null,
-  pieceRates: PieceRates,
-  priorityWeights: PriorityWeights,
-): Position | null =>
-  pieceType
-    ? rankAdaptivePlacements(
-        board,
-        pieceType,
-        storedPieceType,
-        pieceRates,
-        priorityWeights,
-      )[0]?.center ?? null
-    : null
 
 export function useBingoSession() {
   const [savedState] = useState(readSavedState)
@@ -153,33 +139,61 @@ export function useBingoSession() {
   const [lastBoardClick, setLastBoardClick] = useState<Position | null>(null)
   const [hoveredPosition, setHoveredPosition] = useState<Position | null>(null)
   const [cursorPosition, setCursorPosition] = useState<Position | null>(null)
-  const [selectedPosition, setSelectedPosition] = useState<Position | null>(() =>
-    savedState.pieceType
-      ? getTopAdaptiveCenter(
-          savedState.board,
-          savedState.pieceType,
-          savedState.slotPieceType,
-          savedState.pieceRates,
-          savedState.priorityWeights,
-        )
-      : null,
-  )
+  const [selectedPosition, setSelectedPosition] = useState<Position | null>(null)
   const [dismissedHoverPosition, setDismissedHoverPosition] = useState<Position | null>(null)
+  const [plannerResult, setPlannerResult] = useState<{
+    key: string
+    result?: FullBoardPlannerResult
+    error?: string
+  } | null>(null)
   const boardGridRef = useRef<HTMLDivElement>(null)
+  const plannerWorkerRef = useRef<Worker | null>(null)
+  const plannerKey = JSON.stringify({ board, pieceType, slotPieceType, pieceRates, priorityWeights })
 
-  const recommendations = useMemo(
-    () => pieceType
-      ? rankAdaptivePlacements(board, pieceType, slotPieceType, pieceRates, priorityWeights)
+  useEffect(() => {
+    if (!pieceType) return
+    const worker = new Worker(new URL('./planner.worker.ts', import.meta.url), { type: 'module' })
+    plannerWorkerRef.current = worker
+    worker.onmessage = (event: MessageEvent<{ result?: FullBoardPlannerResult; error?: string }>) => {
+      if (plannerWorkerRef.current !== worker) return
+      setPlannerResult({ key: plannerKey, ...event.data })
+      const firstRecommendation = event.data.result?.handRecommendations[0]
+      if (firstRecommendation) {
+        setSelectedPosition((current) => current ?? firstRecommendation.center)
+      }
+      worker.terminate()
+      plannerWorkerRef.current = null
+    }
+    worker.onerror = () => {
+      if (plannerWorkerRef.current !== worker) return
+      setPlannerResult({ key: plannerKey, error: 'The full-board planner stopped unexpectedly.' })
+      worker.terminate()
+      plannerWorkerRef.current = null
+    }
+    worker.postMessage({ board, hand: pieceType, stored: slotPieceType, pieceRates, priorityWeights })
+    return () => {
+      worker.terminate()
+      if (plannerWorkerRef.current === worker) plannerWorkerRef.current = null
+    }
+  }, [board, pieceType, slotPieceType, pieceRates, priorityWeights, plannerKey])
+
+  const plannerResultIsCurrent = plannerResult?.key === plannerKey
+  const recommendations = useMemo<FullBoardCandidate[]>(
+    () => pieceType && plannerResultIsCurrent
+      ? plannerResult.result?.handRecommendations ?? []
       : [],
-    [board, pieceType, slotPieceType, pieceRates, priorityWeights],
+    [pieceType, plannerResult, plannerResultIsCurrent],
   )
+  const storedRecommendations = useMemo<FullBoardCandidate[]>(
+    () => pieceType && plannerResultIsCurrent
+      ? plannerResult.result?.storedRecommendations ?? []
+      : [],
+    [pieceType, plannerResult, plannerResultIsCurrent],
+  )
+  const isPlannerThinking = Boolean(pieceType && !plannerResultIsCurrent)
+  const plannerError = plannerResultIsCurrent ? plannerResult.error ?? null : null
   const recommendation = recommendations[0] ?? null
-  const storedRecommendation = useMemo(
-    () => pieceType && slotPieceType
-      ? rankAdaptivePlacements(board, slotPieceType, pieceType, pieceRates, priorityWeights)[0] ?? null
-      : null,
-    [board, pieceType, slotPieceType, pieceRates, priorityWeights],
-  )
+  const storedRecommendation = storedRecommendations[0] ?? null
   const shouldSwapForHigherAdaptiveValue = Boolean(
     recommendation && storedRecommendation && storedRecommendation.score > recommendation.score,
   )
@@ -273,7 +287,7 @@ export function useBingoSession() {
       if (/^[1-5]$/.test(key)) {
         const nextPieceType = PIECE_OPTIONS[Number(key) - 1].type
         setPieceType(nextPieceType)
-        setSelectedPosition(getTopAdaptiveCenter(board, nextPieceType, slotPieceType, pieceRates, priorityWeights))
+        setSelectedPosition(null)
         setCursorPosition(null)
         setHoveredPosition(null)
         setDismissedHoverPosition(null)
@@ -294,9 +308,7 @@ export function useBingoSession() {
         }
         setPieceType(nextPieceType)
         setSlotPieceType(nextSlotPieceType)
-        setSelectedPosition(
-          getTopAdaptiveCenter(board, nextPieceType, nextSlotPieceType, pieceRates, priorityWeights),
-        )
+        setSelectedPosition(null)
         setCursorPosition(null)
         setHoveredPosition(null)
         setDismissedHoverPosition(null)
@@ -310,9 +322,7 @@ export function useBingoSession() {
         if (previousBoard) {
           setBoard(previousBoard)
           setHistory((previous) => previous.slice(0, -1))
-          setSelectedPosition(
-            getTopAdaptiveCenter(previousBoard, pieceType, slotPieceType, pieceRates, priorityWeights),
-          )
+          setSelectedPosition(null)
           setCursorPosition(null)
           setHoveredPosition(null)
           setDismissedHoverPosition(null)
@@ -342,7 +352,7 @@ export function useBingoSession() {
       const candidateIndexByKey: Record<string, number> = { '7': 0, '8': 1, '9': 2, '0': 3 }
       const candidateIndex = candidateIndexByKey[key]
       if (candidateIndex !== undefined && pieceType) {
-        const candidate = rankAdaptivePlacements(board, pieceType, slotPieceType, pieceRates, priorityWeights)[candidateIndex]
+        const candidate = recommendations[candidateIndex]
         if (candidate) {
           const isSelected =
             selectedPosition?.row === candidate.center.row &&
@@ -368,7 +378,7 @@ export function useBingoSession() {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [board, cursorPosition, history, hoveredPosition, pieceRates, pieceType, priorityWeights, selectedPosition, slotPieceType])
+  }, [board, cursorPosition, history, hoveredPosition, pieceRates, pieceType, priorityWeights, recommendations, selectedPosition, slotPieceType])
 
   const commitPlacement = (center: Position | null) => {
     if (!center || !pieceType) return
@@ -403,9 +413,7 @@ export function useBingoSession() {
     if (!previousBoard) return
     setBoard(previousBoard)
     setHistory((previous) => previous.slice(0, -1))
-    setSelectedPosition(
-      getTopAdaptiveCenter(previousBoard, pieceType, slotPieceType, pieceRates, priorityWeights),
-    )
+    setSelectedPosition(null)
     setCursorPosition(null)
     setHoveredPosition(null)
     setDismissedHoverPosition(null)
@@ -418,7 +426,7 @@ export function useBingoSession() {
     setPieceType('cross')
     setSlotPieceType(null)
     setHistory([])
-    setSelectedPosition(getTopAdaptiveCenter(emptyBoard, 'cross', null, pieceRates, priorityWeights))
+    setSelectedPosition(null)
     setCursorPosition(null)
     setHoveredPosition(null)
     setDismissedHoverPosition(null)
@@ -439,9 +447,7 @@ export function useBingoSession() {
 
     setPieceType(nextPieceType)
     setSlotPieceType(nextSlotPieceType)
-    setSelectedPosition(
-      getTopAdaptiveCenter(board, nextPieceType, nextSlotPieceType, pieceRates, priorityWeights),
-    )
+    setSelectedPosition(null)
     setCursorPosition(null)
     setHoveredPosition(null)
     setDismissedHoverPosition(null)
@@ -450,7 +456,7 @@ export function useBingoSession() {
 
   const selectPiece = (nextPieceType: PieceType) => {
     setPieceType(nextPieceType)
-    setSelectedPosition(getTopAdaptiveCenter(board, nextPieceType, slotPieceType, pieceRates, priorityWeights))
+    setSelectedPosition(null)
     setCursorPosition(null)
     setHoveredPosition(null)
     setDismissedHoverPosition(null)
@@ -472,11 +478,7 @@ export function useBingoSession() {
       [updatedPiece]: Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0)),
     }
     setPieceRates(nextRates)
-    setSelectedPosition(
-      pieceType
-        ? getTopAdaptiveCenter(board, pieceType, slotPieceType, nextRates, priorityWeights)
-        : null,
-    )
+    setSelectedPosition(null)
     setCursorPosition(null)
     setHoveredPosition(null)
     setDismissedHoverPosition(null)
@@ -489,11 +491,7 @@ export function useBingoSession() {
       [key]: Math.max(0, Math.min(12, Number.isFinite(value) ? value : 0)),
     }
     setPriorityWeights(nextWeights)
-    setSelectedPosition(
-      pieceType
-        ? getTopAdaptiveCenter(board, pieceType, slotPieceType, pieceRates, nextWeights)
-        : null,
-    )
+    setSelectedPosition(null)
     setCursorPosition(null)
     setHoveredPosition(null)
     setDismissedHoverPosition(null)
@@ -516,7 +514,7 @@ export function useBingoSession() {
     setPriorityWeights(defaultWeights)
     setSkipThreshold(DEFAULT_SKIP_THRESHOLD)
     setHistory([])
-    setSelectedPosition(getTopAdaptiveCenter(emptyBoard, 'cross', null, defaultRates, defaultWeights))
+    setSelectedPosition(null)
     setCursorPosition(null)
     setHoveredPosition(null)
     setDismissedHoverPosition(null)
@@ -534,8 +532,10 @@ export function useBingoSession() {
     history,
     hoveredPosition,
     isRecommendationPreview,
+    isPlannerThinking,
     pieceRates,
     pieceType,
+    plannerError,
     priorityWeights,
     progressLines,
     recommendation,

@@ -4,11 +4,11 @@ A plain-language guide to what the engine does today and how to improve it witho
 
 ## The Short Version
 
-The engine currently uses a **one-draw lookahead heuristic**. It scores placements for the current piece, then estimates the value of the next move using the stored piece and the configured piece-drop rates.
+The planner now uses a **bounded full-board search**. For every possible current placement, it explores likely future piece draws, legal placements, and hand/storage choices, then estimates the eventual board.
 
-This is smarter than a purely immediate scorer, but it only estimates one future draw. It does not yet plan through the rest of the board or estimate when the player should skip based on all tracked objectives.
+Projected tile coverage after the next four draws is the primary comparison. Configured bingo value and enclosed empty gaps break close ties. The search currently evaluates eight shared, repeatable draw samples using a narrow beam; it is useful guidance, not an exhaustive solver or a real-world probability guarantee.
 
-The planner should remain focused on recommending moves. It should also show when skipping looks sensible based on the skip threshold, priority bingos, and the notable tile rewards the player has manually recorded. An offline simulator can compare strategies on identical seeded games and help validate a future full-board planner.
+The planner recommends one move at a time and replans after the board, hand, storage, or estimated piece rates change. The offline simulator remains separate and compares baseline strategies on identical seeded games.
 
 ## What the Engine Does Today
 
@@ -16,14 +16,14 @@ The main logic is in `app/src/game.ts`.
 
 For each possible placement, the engine roughly asks:
 
-- How many new cells will this piece cover?
-- Which unfinished bingo lines will it advance?
-- Does it complete any lines?
-- Are those lines considered important by the current weights?
+- How much of the board can likely be covered after future draws?
+- Can the current and stored pieces be used in a useful order?
+- Does a move leave enclosed empty cells or awkward regions?
+- How many bingos are likely, and how valuable are they under the configured weights?
 
-It estimates an immediate placement score, adds a discounted expected value for the next turn, then sorts placements. The score is a **ranking tool**, not a number of leaves, star candy, certificates, or a probability of winning. The one-draw discount is experimental and has not yet been validated in batches of complete games.
+The planner evaluates eight repeatable future draw sequences, each up to four turns, with a narrow beam of candidate board states. It ranks projected coverage at that horizon first, then configured bingo value and trapped-gap risk. The displayed comparisons describe these sampled searches; they are not guarantees or validated estimates over all possible games.
 
-When there is a piece in storage, the next-turn estimate considers keeping that piece available alongside the next random draw. This gives storage some flexibility value, but only over one future turn. It cannot yet answer which sequence of choices is best through the end of the board.
+When a piece is in storage, every simulated turn can use either the new draw or the stored piece, placing the unused piece into storage. Both the hand and storage-piece plans are compared for swap advice.
 
 ### The numbers that look like rates
 
@@ -32,7 +32,7 @@ There are two different kinds of numbers, and they do different jobs:
 - **Piece rates** are estimates of how often each type of piece appears. They help adjust how achievable rows, columns, and diagonals seem.
 - **Piece affinity** is a score multiplier for shapes that naturally help certain line types. For example, `1.35` means a Cross gets 35% extra line-progress score for a diagonal. It does **not** mean a 35% chance of drawing a Cross or completing a bingo.
 
-The priority weights and affinity multipliers are hand-picked tuning knobs. They are not learned from data and are not guaranteed to be optimal.
+The configured piece rates and bingo weights influence future draws and secondary bingo scoring. They are estimates and hand-picked priorities, not learned values.
 
 ## What “Looking Ahead” Means
 
@@ -41,15 +41,15 @@ Imagine choosing between two moves:
 - Move A earns a small amount of value now, but leaves a great piece in storage for later.
 - Move B scores more immediately, but uses up that piece where it may not help much.
 
-The current engine looks through one draw: it asks what good next placement might be possible after each candidate move. Future draws are weighted by the configured rates, and the stored piece remains available. It does **not** continue this process until the board ends.
+The current planner looks through several sampled draws after each candidate move. It follows placements and hand/storage choices in each sequence, stopping when the board is full or the search horizon ends.
 
-A future full-board planner would simulate several possible sequences of draws and placements until the skip suggestion is satisfied or the board is full. It would estimate the average result of each current move rather than only the next move. Because notable reward locations are hidden, each simulated board should randomly assign them; the live planner should use only the rewards the player has marked as seen.
+Notable tile reward locations remain unknown to this search; it does not predict or assign them. The player’s manually observed reward tracking and skip advice are separate from this move recommendation.
 
 In plain language, it tries to answer:
 
-> Value of this move = immediate heuristic score + discounted expected value of a next move.
+> Value of this move = projected final tile coverage first, then completion speed, bingo value, and open-space quality.
 
-“Average” matters because the next piece is random. If piece rates say a shape is common, the engine gives that possible draw more influence than a rare shape. The result is still an experimental heuristic score, not a measured reward or a full-game guarantee.
+Future pieces are sampled using the configured rates, and each candidate sees the same deterministic sequences for a fair comparison. The small sample and narrow beam make the result an estimate, not a measured reward or proof of optimal play.
 
 ## A Practical Upgrade Path
 
@@ -85,7 +85,7 @@ Compare at least:
 
 Track complete-game bingo counts, separate reward totals, priority lines completed, notable rewards collected, tiles covered, and whether/when the skip suggestion became valid. Test varied piece distributions and hidden reward layouts.
 
-### 5. Add full-game planning
+### 5. Validate and expand full-board planning
 
 Once the simulator is trusted, evaluate each candidate move with future rollouts through skip readiness or the full-board cap:
 

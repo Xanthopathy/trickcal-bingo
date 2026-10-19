@@ -389,13 +389,11 @@ The current adaptive ranker adds a **one-draw expected continuation** to the imm
 
 This is a short lookahead heuristic, not a full-game solver. Its score is a ranking value, not an actual combined amount of leaves, star candy, and certificates.
 
-### E. Full-Game Planner (Future)
+### E. Current Full-Board Planner
 
-### E. Full-Board Planner (Future)
+The planner evaluates each available first move with a worker-backed beam search over eight repeatable piece-draw sequences, up to four future draws. It models the hand and storage slot and ranks projected tile coverage at that horizon first, then configured bingo value and enclosed-gap risk. This is a bounded estimate, not exhaustive search; compare it against the simulation baselines on held-out seeds before treating it as stronger.
 
-Evaluate candidate moves by simulating possible draws and good placements until the skip suggestion is satisfied or the board is full. Include the storage slot and unknown locations of notable tile rewards. Use a bounded method such as Monte Carlo rollouts or beam search rather than assuming exhaustive search is practical.
-
-The full-board planner must use the same transition rules and skip-suggestion policy as the offline simulator. Compare it against the baselines on held-out seeded sequences before presenting it as stronger.
+Unknown notable-tile locations are not predicted by the live planner. Manual reward observations and skip advice remain separate concerns.
 
 ### F. Monte Carlo Lookahead
 
@@ -597,9 +595,9 @@ Implement:
 
 Implement:
 
-- Evaluate the current one-draw heuristic in simulation
-- Full-board rollouts through skip readiness or the full-board cap
-- Beam search / expectimax experiments if rollouts are promising
+- Evaluate the current coverage-first full-board planner in simulation
+- Extend the search horizon/sample count only when latency and held-out results justify it
+- Compare beam search with expectimax or Monte Carlo alternatives
 - Piece-substitution scoring
 - Future-flexibility scoring
 
