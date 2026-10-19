@@ -66,7 +66,7 @@ function App() {
           />
         ) : (
           <TrackingPage
-            trackedPieceCounts={session.trackedPieceCounts}
+            trackedPieceCounts={session.displayedPieceCounts}
             trackingMode={session.trackingMode}
             updateTrackedPieceCount={session.updateTrackedPieceCount}
           />

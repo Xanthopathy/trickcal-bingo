@@ -21,6 +21,7 @@ type BoardPanelProps = Pick<
   | 'previewCells'
   | 'skipThreshold'
   | 'slotPieceType'
+  | 'skipBoard'
   | 'startNewBoard'
   | 'undo'
 >
@@ -39,6 +40,7 @@ export function BoardPanel({ session }: { session: BoardPanelProps }) {
     previewCells,
     skipThreshold,
     slotPieceType,
+    skipBoard,
     startNewBoard,
     undo,
   } = session
@@ -62,7 +64,7 @@ export function BoardPanel({ session }: { session: BoardPanelProps }) {
           <button
             className="text-button skip-button"
             type="button"
-            onClick={startNewBoard}
+            onClick={skipBoard}
             disabled={coveredCount < skipThreshold}
             title={coveredCount < skipThreshold ? `Available at ${skipThreshold} covered tiles` : 'Start a new board'}
           >

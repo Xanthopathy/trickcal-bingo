@@ -287,6 +287,12 @@ export function useBingoSession() {
   )
   const boardSummary = useMemo(() => getBoardSummary(board), [board])
   const { completedLines, coveredTiles: coveredCount } = boardSummary
+  const displayedPieceCounts = useMemo(() => {
+    const counts = { ...trackedPieceCounts }
+    if (trackingMode && pieceType) counts[pieceType] += 1
+    if (trackingMode && slotPieceType) counts[slotPieceType] += 1
+    return counts
+  }, [pieceType, slotPieceType, trackedPieceCounts, trackingMode])
   const totalPieceRate = useMemo(
     () => Object.values(pieceRates).reduce((total, rate) => total + rate, 0),
     [pieceRates],
@@ -479,6 +485,16 @@ export function useBingoSession() {
     setLastBoardClick(null)
   }
 
+  const skipBoard = () => {
+    if (trackingMode && slotPieceType) {
+      setTrackedPieceCounts((previous) => ({
+        ...previous,
+        [slotPieceType]: previous[slotPieceType] + 1,
+      }))
+    }
+    startNewBoard()
+  }
+
   const swapSlot = () => {
     let nextPieceType = pieceType
     let nextSlotPieceType = slotPieceType
@@ -520,7 +536,13 @@ export function useBingoSession() {
 
   const updateTrackedPieceCount = (piece: PieceType, value: number) => {
     const count = Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0
-    setTrackedPieceCounts((previous) => ({ ...previous, [piece]: count }))
+    const activeContribution = trackingMode
+      ? (pieceType === piece ? 1 : 0) + (slotPieceType === piece ? 1 : 0)
+      : 0
+    setTrackedPieceCounts((previous) => ({
+      ...previous,
+      [piece]: Math.max(0, count - activeContribution),
+    }))
   }
 
   const updatePieceRate = (updatedPiece: PieceType, value: number) => {
@@ -587,6 +609,7 @@ export function useBingoSession() {
     pieceRates,
     pieceType,
     trackedPieceCounts,
+    displayedPieceCounts,
     trackingMode,
     plannerError,
     plannerPatience,
@@ -618,6 +641,7 @@ export function useBingoSession() {
     setSettingsOpen,
     setSkipThreshold,
     startNewBoard,
+    skipBoard,
     swapSlot,
     toggleRecommendation,
     undo,
