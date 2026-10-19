@@ -16,10 +16,12 @@ import {
 } from '../game'
 import { PIECE_OPTIONS } from './constants'
 import {
+  DEFAULT_PLANNER_PATIENCE,
+  MIN_MEANINGFUL_COVERAGE_DIFFERENCE,
   type FullBoardCandidate,
   type FullBoardPlannerResult,
+  type PlannerPatience,
 } from './fullBoardPlanner'
-import { MIN_MEANINGFUL_COVERAGE_DIFFERENCE } from './fullBoardPlanner'
 
 const STORAGE_KEY = 'bingo-adaptive-board-v1'
 const DEFAULT_SKIP_THRESHOLD = 39
@@ -31,6 +33,7 @@ type SavedState = {
   pieceRates: PieceRates
   priorityWeights: PriorityWeights
   skipThreshold: number
+  plannerPatience: PlannerPatience
 }
 
 const isBoard = (value: unknown): value is Board =>
@@ -68,6 +71,9 @@ const isPriorityWeights = (value: unknown): value is PriorityWeights => {
   )
 }
 
+const isPlannerPatience = (value: unknown): value is PlannerPatience =>
+  typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 5
+
 const defaultSavedState = (): SavedState => ({
   board: createEmptyBoard(),
   pieceType: 'cross',
@@ -75,6 +81,7 @@ const defaultSavedState = (): SavedState => ({
   pieceRates: { ...DEFAULT_PIECE_RATES },
   priorityWeights: { ...DEFAULT_PRIORITY_WEIGHTS },
   skipThreshold: DEFAULT_SKIP_THRESHOLD,
+  plannerPatience: DEFAULT_PLANNER_PATIENCE,
 })
 
 const readSavedState = (): SavedState => {
@@ -115,6 +122,10 @@ const readSavedState = (): SavedState => {
               ? DEFAULT_SKIP_THRESHOLD
               : parsed.skipThreshold
             : DEFAULT_SKIP_THRESHOLD,
+        plannerPatience:
+          'plannerPatience' in parsed && isPlannerPatience(parsed.plannerPatience)
+            ? parsed.plannerPatience
+            : DEFAULT_PLANNER_PATIENCE,
       }
     }
   } catch {
@@ -132,6 +143,7 @@ export function useBingoSession() {
   const [pieceRates, setPieceRates] = useState(savedState.pieceRates)
   const [priorityWeights, setPriorityWeights] = useState(savedState.priorityWeights)
   const [skipThreshold, setSkipThreshold] = useState(savedState.skipThreshold)
+  const [plannerPatience, setPlannerPatience] = useState(savedState.plannerPatience)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [history, setHistory] = useState<Board[]>([])
   const [lastBoardClick, setLastBoardClick] = useState<Position | null>(null)
@@ -146,7 +158,7 @@ export function useBingoSession() {
   } | null>(null)
   const boardGridRef = useRef<HTMLDivElement>(null)
   const plannerWorkerRef = useRef<Worker | null>(null)
-  const plannerKey = JSON.stringify({ board, pieceType, slotPieceType, pieceRates })
+  const plannerKey = JSON.stringify({ board, pieceType, slotPieceType, pieceRates, plannerPatience })
 
   useEffect(() => {
     if (!pieceType) return
@@ -164,16 +176,16 @@ export function useBingoSession() {
     }
     worker.onerror = () => {
       if (plannerWorkerRef.current !== worker) return
-      setPlannerResult({ key: plannerKey, error: 'The full-board planner stopped unexpectedly.' })
+      setPlannerResult({ key: plannerKey, error: 'The sampled lookahead planner stopped unexpectedly.' })
       worker.terminate()
       plannerWorkerRef.current = null
     }
-    worker.postMessage({ board, hand: pieceType, stored: slotPieceType, pieceRates })
+    worker.postMessage({ board, hand: pieceType, stored: slotPieceType, pieceRates, patience: plannerPatience })
     return () => {
       worker.terminate()
       if (plannerWorkerRef.current === worker) plannerWorkerRef.current = null
     }
-  }, [board, pieceType, slotPieceType, pieceRates, plannerKey])
+  }, [board, pieceType, slotPieceType, pieceRates, plannerPatience, plannerKey])
 
   const plannerResultIsCurrent = plannerResult?.key === plannerKey
   const recommendations = useMemo<FullBoardCandidate[]>(
@@ -223,12 +235,12 @@ export function useBingoSession() {
     try {
       window.localStorage.setItem(
         STORAGE_KEY,
-        JSON.stringify({ board, pieceType, slotPieceType, pieceRates, priorityWeights, skipThreshold }),
+        JSON.stringify({ board, pieceType, slotPieceType, pieceRates, priorityWeights, skipThreshold, plannerPatience }),
       )
     } catch {
       // Continue using the board if browser storage is unavailable.
     }
-  }, [board, pieceType, slotPieceType, pieceRates, priorityWeights, skipThreshold])
+  }, [board, pieceType, slotPieceType, pieceRates, priorityWeights, skipThreshold, plannerPatience])
 
   useEffect(() => {
     const boardGrid = boardGridRef.current
@@ -493,6 +505,7 @@ export function useBingoSession() {
     setPieceRates(defaultRates)
     setPriorityWeights(defaultWeights)
     setSkipThreshold(DEFAULT_SKIP_THRESHOLD)
+    setPlannerPatience(DEFAULT_PLANNER_PATIENCE)
     setHistory([])
     setSelectedPosition(null)
     setCursorPosition(null)
@@ -516,6 +529,7 @@ export function useBingoSession() {
     pieceRates,
     pieceType,
     plannerError,
+    plannerPatience,
     priorityWeights,
     recommendation,
     recommendations,
@@ -536,6 +550,7 @@ export function useBingoSession() {
     setHoveredPosition,
     setPieceRates,
     setPriorityWeights,
+    setPlannerPatience,
     setSelectedPosition,
     setSettingsOpen,
     setSkipThreshold,

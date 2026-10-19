@@ -57,8 +57,8 @@ function App() {
       )}
 
       <footer className="page-footer">
-        <span>{activePage === 'planner' ? 'Full-board coverage search · Prototype' : 'Shared-sequence strategy comparison · Prototype'}</span>
-        <span>{activePage === 'planner' ? 'Future draws are sampled; projected plans are estimates, not guarantees.' : 'Simulated results are estimates and depend on the configured piece rates.'}</span>
+        <span>{activePage === 'planner' ? 'Sampled lookahead planner · Prototype' : 'Shared-sequence strategy comparison · Prototype'}</span>
+        <span>{activePage === 'planner' ? 'The planner’s draw horizon follows the patience setting; projections are estimates.' : 'Simulated results are estimates and depend on the configured piece rates.'}</span>
       </footer>
     </main>
   )

@@ -389,9 +389,9 @@ The current adaptive ranker adds a **one-draw expected continuation** to the imm
 
 This is a short lookahead heuristic, not a full-game solver. Its score is a ranking value, not an actual combined amount of leaves, star candy, and certificates.
 
-### E. Current Full-Board Planner
+### E. Current Sampled Lookahead Planner
 
-The planner evaluates each available first move with a worker-backed beam search over eight repeatable piece-draw sequences, up to four future draws. It models the hand and storage slot and ranks projected tile coverage at that horizon first, then bingo count and enclosed-gap risk. Adjustable heuristic priorities are used only by Simulation strategies. This is a bounded estimate, not exhaustive search; compare it against the simulation baselines on held-out seeds before treating it as stronger.
+The planner evaluates each available first move with a worker-backed sampled lookahead. Its five patience levels range from two future draws/four samples to fourteen future draws/twenty-four samples; Balanced defaults to four draws/eight samples. Maximum is estimated at roughly 45–90 seconds, depending on device and board. It models the hand and storage slot and ranks coverage at the selected horizon, then bingo count and enclosed-gap risk. It does not guarantee a complete-game simulation. Adjustable heuristic priorities are used only by Simulation strategies. This is a bounded estimate, not exhaustive search; compare it against the simulation baselines on held-out seeds before treating it as stronger.
 
 Unknown notable-tile locations are not predicted by the live planner. Manual reward observations and skip advice remain separate concerns.
 
@@ -595,7 +595,7 @@ Implement:
 
 Implement:
 
-- Evaluate the current coverage-first full-board planner in simulation
+- Evaluate the current coverage-first sampled lookahead planner in simulation
 - Extend the search horizon/sample count only when latency and held-out results justify it
 - Compare beam search with expectimax or Monte Carlo alternatives
 - Piece-substitution scoring

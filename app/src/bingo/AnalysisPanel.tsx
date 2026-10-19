@@ -119,14 +119,14 @@ export function AnalysisPanel({ session }: { session: AnalysisPanelProps }) {
       <section className="recommendation-section" aria-live="polite">
         <div className="panel-heading recommendation-heading">
           <div>
-            <p className="section-kicker">FULL-BOARD SEARCH</p>
+            <p className="section-kicker">SAMPLED LOOKAHEAD</p>
             <h2>Recommended placement</h2>
           </div>
           <span className="recommendation-tag">{isPlannerThinking ? 'SEARCHING' : 'COVERAGE FIRST'}</span>
         </div>
 
         {isPlannerThinking ? (
-          <p className="empty-note">Searching future draws for the strongest board-filling plan…</p>
+          <p className="empty-note">Searching sampled future draws for a strong coverage move…</p>
         ) : plannerError ? (
           <p className="empty-note" role="alert">{plannerError}</p>
         ) : recommendation && pieceType ? (

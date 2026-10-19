@@ -1,13 +1,16 @@
 import type { PriorityWeights } from '../game'
+import { PLANNER_PATIENCE_LEVELS, type PlannerPatience } from './fullBoardPlanner'
 import type { BingoSession } from './useBingoSession'
 import { PIECE_OPTIONS } from './constants'
 
 type SettingsPopoverProps = Pick<
   BingoSession,
   | 'pieceRates'
+  | 'plannerPatience'
   | 'priorityWeights'
   | 'resetSiteData'
   | 'setSettingsOpen'
+  | 'setPlannerPatience'
   | 'setSkipThreshold'
   | 'settingsOpen'
   | 'skipThreshold'
@@ -26,9 +29,11 @@ const PRIORITY_OPTIONS: { key: keyof PriorityWeights; label: string }[] = [
 export function SettingsPopover({ session }: { session: SettingsPopoverProps }) {
   const {
     pieceRates,
+    plannerPatience,
     priorityWeights,
     resetSiteData,
     setSettingsOpen,
+    setPlannerPatience,
     setSkipThreshold,
     settingsOpen,
     skipThreshold,
@@ -81,6 +86,30 @@ export function SettingsPopover({ session }: { session: SettingsPopoverProps }) 
               }
             />
           </label>
+
+          <div className="settings-group planner-patience-group">
+            <div className="settings-group-heading">
+              <h3>Planner patience</h3>
+              <span>{PLANNER_PATIENCE_LEVELS[plannerPatience].label}</span>
+            </div>
+            <p>More patience searches more draws and samples, but takes longer.</p>
+            <label className="planner-patience-control">
+              <input
+                type="range"
+                min="1"
+                max="5"
+                step="1"
+                value={plannerPatience}
+                aria-label="Planner patience"
+                onChange={(event) => setPlannerPatience(Number(event.currentTarget.value) as PlannerPatience)}
+              />
+              <span className="planner-patience-scale"><span>Faster</span><span>Deeper</span></span>
+              <small>
+                {PLANNER_PATIENCE_LEVELS[plannerPatience].samples} samples · up to {PLANNER_PATIENCE_LEVELS[plannerPatience].futureTurns} future draws · about {PLANNER_PATIENCE_LEVELS[plannerPatience].estimatedTime}
+              </small>
+            </label>
+            <p>Runtime is a rough estimate; device and board state can change it significantly.</p>
+          </div>
 
           <div className="settings-group">
             <div className="settings-group-heading">

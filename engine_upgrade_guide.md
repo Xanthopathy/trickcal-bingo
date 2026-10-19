@@ -4,9 +4,9 @@ A plain-language guide to what the engine does today and how to improve it witho
 
 ## The Short Version
 
-The planner now uses a **bounded full-board search**. For every possible current placement, it explores likely future piece draws, legal placements, and hand/storage choices, then estimates the eventual board.
+The planner uses a **bounded sampled lookahead**. For every possible current placement, it explores likely future piece draws, legal placements, and hand/storage choices, then compares the board at a configurable short horizon.
 
-Projected tile coverage after the next four draws is the primary comparison. Bingo count and enclosed empty gaps break close ties. The search currently evaluates eight shared, repeatable draw samples using a narrow beam; it is useful guidance, not an exhaustive solver or a real-world probability guarantee.
+Settings offer five patience levels. They range from two future draws and four samples to fourteen future draws and twenty-four samples; the default Balanced level uses four draws and eight samples. The Maximum setting is estimated at roughly 45–90 seconds, depending on device and board. Projected tile coverage at that horizon is primary, with bingo count and enclosed empty gaps breaking close ties. No level guarantees a complete-game simulation, and none is an exhaustive solver or a real-world probability guarantee.
 
 The planner recommends one move at a time and replans after the board, hand, storage, or estimated piece rates change. The offline simulator remains separate and compares baseline strategies on identical seeded games.
 
@@ -21,7 +21,7 @@ For each possible placement, the engine roughly asks:
 - Does a move leave enclosed empty cells or awkward regions?
 - How many bingos are likely, after coverage has been considered?
 
-The planner evaluates eight repeatable future draw sequences, each up to four turns, with a narrow beam of candidate board states. It ranks projected coverage at that horizon first, then bingo count and trapped-gap risk. The displayed comparisons describe these sampled searches; they are not guarantees or validated estimates over all possible games.
+The patience setting controls the number of repeatable draw sequences, search horizon, and beam width. The planner ranks projected coverage at that horizon first, then bingo count and trapped-gap risk. The displayed comparisons describe those sampled searches; they are not guarantees or validated estimates over all possible games.
 
 When a piece is in storage, every simulated turn can use either the new draw or the stored piece, placing the unused piece into storage. Both the hand and storage-piece plans are compared for swap advice.
 

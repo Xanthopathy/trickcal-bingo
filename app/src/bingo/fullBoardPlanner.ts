@@ -13,12 +13,29 @@ import {
 } from '../game'
 
 const PIECE_TYPES = Object.keys(DEFAULT_PIECE_RATES) as PieceType[]
-const SAMPLE_COUNT = 8
-const FUTURE_TURNS = 4
-const BEAM_WIDTH = 2
-const ACTIONS_PER_PIECE = 2
 const COVERAGE_VALUE = 1_000_000
 export const MIN_MEANINGFUL_COVERAGE_DIFFERENCE = 0.5
+
+export type PlannerPatience = 1 | 2 | 3 | 4 | 5
+
+export const DEFAULT_PLANNER_PATIENCE: PlannerPatience = 2
+
+export type PlannerSearchSettings = {
+  label: string
+  futureTurns: number
+  samples: number
+  beamWidth: number
+  actionsPerPiece: number
+  estimatedTime: string
+}
+
+export const PLANNER_PATIENCE_LEVELS: Record<PlannerPatience, PlannerSearchSettings> = {
+  1: { label: 'Quick', futureTurns: 2, samples: 4, beamWidth: 1, actionsPerPiece: 1, estimatedTime: '<1 sec' },
+  2: { label: 'Balanced', futureTurns: 4, samples: 8, beamWidth: 2, actionsPerPiece: 2, estimatedTime: '5-10 sec' },
+  3: { label: 'Patient', futureTurns: 6, samples: 12, beamWidth: 2, actionsPerPiece: 2, estimatedTime: '10-20 sec' },
+  4: { label: 'Deep', futureTurns: 10, samples: 16, beamWidth: 2, actionsPerPiece: 2, estimatedTime: '25-45 sec' },
+  5: { label: 'Maximum', futureTurns: 14, samples: 24, beamWidth: 2, actionsPerPiece: 2, estimatedTime: '45-90 sec' },
+}
 
 export type FullBoardCandidate = AdaptivePlacementCandidate & {
   projectedCoverage: number
@@ -33,6 +50,7 @@ export type FullBoardPlannerInput = {
   hand: PieceType
   stored: PieceType | null
   pieceRates: PieceRates
+  patience: PlannerPatience
 }
 
 export type FullBoardPlannerResult = {
@@ -97,10 +115,15 @@ const drawPiece = (random: ScenarioRandom, rates: PieceRates): PieceType => {
   return PIECE_TYPES[PIECE_TYPES.length - 1]
 }
 
-const createScenarios = (board: Board, rates: PieceRates): PieceType[][] => {
+const createScenarios = (
+  board: Board,
+  rates: PieceRates,
+  sampleCount: number,
+  futureTurns: number,
+): PieceType[][] => {
   const random = createRandom(createScenarioSeed(board, rates))
-  return Array.from({ length: SAMPLE_COUNT }, () =>
-    Array.from({ length: FUTURE_TURNS }, () => drawPiece(random, rates)),
+  return Array.from({ length: sampleCount }, () =>
+    Array.from({ length: futureTurns }, () => drawPiece(random, rates)),
   )
 }
 
@@ -147,6 +170,7 @@ const candidateActions = (
   state: FutureState,
   piece: PieceType,
   otherPiece: PieceType | null,
+  actionsPerPiece: number,
 ): FutureState[] => {
   const candidates = placementCenters(piece).map((center) => {
     const delta = getPlacementDelta(state.board, piece, center)
@@ -180,7 +204,7 @@ const candidateActions = (
       if (selectedKeys.has(key)) continue
       selected.push(candidate)
       selectedKeys.add(key)
-      if (selected.length >= ACTIONS_PER_PIECE) return selected
+      if (selected.length >= actionsPerPiece) return selected
     }
   }
 
@@ -189,7 +213,7 @@ const candidateActions = (
     if (selectedKeys.has(key)) continue
     selected.push(candidate)
     selectedKeys.add(key)
-    if (selected.length >= ACTIONS_PER_PIECE) break
+    if (selected.length >= actionsPerPiece) break
   }
 
   return selected.map(({ board, stored, score }) => ({ board, stored, score }))
@@ -199,6 +223,7 @@ const searchScenario = (
   initialBoard: Board,
   initialStored: PieceType | null,
   draws: PieceType[],
+  searchSettings: PlannerSearchSettings,
 ) => {
   let beam: FutureState[] = [{
     board: initialBoard,
@@ -220,7 +245,7 @@ const searchScenario = (
         ) === index,
       )
       for (const { piece, otherPiece } of uniqueChoices) {
-        for (const next of candidateActions(state, piece, otherPiece)) {
+        for (const next of candidateActions(state, piece, otherPiece, searchSettings.actionsPerPiece)) {
           const summary = getBoardSummary(next.board)
           if (summary.coveredTiles === BOARD_SIZE * BOARD_SIZE) {
             nextStates.set(boardKey(next.board), next)
@@ -235,7 +260,7 @@ const searchScenario = (
 
     beam = [...nextStates.values()]
       .sort((left, right) => right.score - left.score)
-      .slice(0, BEAM_WIDTH)
+      .slice(0, searchSettings.beamWidth)
     if (beam.length === 0 || beam.every((state) => getBoardSummary(state.board).coveredTiles === BOARD_SIZE * BOARD_SIZE)) {
       break
     }
@@ -257,6 +282,7 @@ const rankPiecePlans = (
   storedPiece: PieceType | null,
   scenarios: PieceType[][],
   pieceRates: PieceRates,
+  searchSettings: PlannerSearchSettings,
 ): FullBoardCandidate[] => {
   const rankedCandidates = rankPlacements(board, piece, pieceRates)
   const hasUsefulPlacement = rankedCandidates.some((candidate) => candidate.newCells > 0)
@@ -287,6 +313,7 @@ const rankPiecePlans = (
         nextBoard,
         initialStored,
         scenario,
+        searchSettings,
       )
       stats.coverageTotal += summary.coveredTiles
       stats.bingoTotal += summary.completedLines.length
@@ -305,11 +332,11 @@ const rankPiecePlans = (
         projectedCoverage,
         projectedBingos: bingoTotal / scenarios.length,
         projectedGapCount: gapTotal / scenarios.length,
-        horizonDraws: FUTURE_TURNS,
+        horizonDraws: searchSettings.futureTurns,
         sampleCount: scenarios.length,
         expectedFutureScore: coverageTotal / scenarios.length,
-        explanation: `Projects ${projectedCoverage.toFixed(1)} covered tiles after ${FUTURE_TURNS} future draws.`,
-        futureExplanation: `Estimated across ${SAMPLE_COUNT} shared draw samples; bingo rewards and enclosed gaps break coverage ties.`,
+        explanation: `Projects ${projectedCoverage.toFixed(1)} covered tiles after ${searchSettings.futureTurns} future draws.`,
+        futureExplanation: `Estimated across ${scenarios.length} shared draw samples; bingo rewards and enclosed gaps break coverage ties.`,
       }
     })
     .sort((left, right) =>
@@ -324,7 +351,8 @@ const rankPiecePlans = (
 
 export const planFullBoard = (input: FullBoardPlannerInput): FullBoardPlannerResult => {
   const pieceRates = normalizeRates(input.pieceRates)
-  const scenarios = createScenarios(input.board, pieceRates)
+  const searchSettings = PLANNER_PATIENCE_LEVELS[input.patience]
+  const scenarios = createScenarios(input.board, pieceRates, searchSettings.samples, searchSettings.futureTurns)
 
   return {
     handRecommendations: rankPiecePlans(
@@ -333,6 +361,7 @@ export const planFullBoard = (input: FullBoardPlannerInput): FullBoardPlannerRes
       input.stored,
       scenarios,
       pieceRates,
+      searchSettings,
     ),
     storedRecommendations: input.stored
       ? rankPiecePlans(
@@ -341,9 +370,10 @@ export const planFullBoard = (input: FullBoardPlannerInput): FullBoardPlannerRes
         input.hand,
         scenarios,
         pieceRates,
+        searchSettings,
       )
       : [],
-    futureTurns: FUTURE_TURNS,
-    scenarios: SAMPLE_COUNT,
+    futureTurns: searchSettings.futureTurns,
+    scenarios: searchSettings.samples,
   }
 }
