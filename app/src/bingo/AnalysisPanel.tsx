@@ -143,11 +143,14 @@ export function AnalysisPanel({ session }: { session: AnalysisPanelProps }) {
             >
               <strong>{positionLabel(recommendation.center)}</strong>
               <p>Top projected board fill</p>
+              <span className="move-score">Score {recommendation.recommendationScore.toFixed(1)}</span>
             </button>
           </>
         ) : (
           <p className="empty-note">{pieceType ? 'No full-board plan is available for this position.' : 'Select a piece in hand to calculate a full-board plan.'}</p>
         )}
+
+        {recommendation && <p className="score-legend">Scores compare this piece’s placements: projected coverage dominates, with bingos and gaps as tie-breakers. 100 is the top score shown, not a probability.</p>}
 
         {recommendations.length > 1 && (
           <div className="alternatives">
@@ -164,7 +167,7 @@ export function AnalysisPanel({ session }: { session: AnalysisPanelProps }) {
                   onBlur={clearPreview}
                   onClick={() => toggleRecommendation(candidate.center)}
                 >
-                  <span className="alternative-rank">0{index + 2}</span>
+                  <span className="alternative-rank">0{index + 2} · {candidate.recommendationScore.toFixed(1)}</span>
                   <span className="alternative-position">{positionLabel(candidate.center)}</span>
                   <span className="alternative-summary">
                     {candidate.completedLines.length > 0

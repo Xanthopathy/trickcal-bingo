@@ -113,6 +113,21 @@
 .planner-patience-scale { display: flex; justify-content: space-between; gap: 8px; }
 .planner-patience-control small { color: #d4ded5; font-size: 10px; }
 
+.reset-settings-button {
+  width: 100%;
+  min-height: 35px;
+  margin-top: 15px;
+  border: 1px solid #64816b;
+  border-radius: 4px;
+  background: #26352a;
+  color: #d6ebd8;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.reset-settings-button:hover { background: #314635; }
+.reset-settings-button + .reset-data-button { margin-top: 7px; }
 .reset-data-button {
   width: 100%;
   min-height: 35px;
@@ -329,6 +344,7 @@
 .recommended-move { width: 100%; display: flex; align-items: center; gap: 10px; margin: 10px 0 8px; padding: 9px; border: 1px solid #4d5b50; border-radius: 5px; background: var(--surface-raised); color: inherit; font: inherit; text-align: left; cursor: pointer; transition: border-color 120ms ease, background-color 120ms ease, box-shadow 120ms ease; }
 .recommended-move > strong { flex: none; min-width: 48px; padding: 7px; border-radius: 4px; background: #397349; color: #fff; font-size: 18px; line-height: 1; text-align: center; }
 .recommended-move p { margin: 0; color: var(--text); font-size: 13px; line-height: 1.4; }
+.move-score { flex: none; color: #a9e3b2; font-size: 11px; font-variant-numeric: tabular-nums; font-weight: 750; }
 .recommended-move:hover,
 .recommended-move:focus-visible,
 .recommended-move.is-selected { border-color: #8bd39a; background: #28342b; box-shadow: 0 0 0 2px rgba(116, 201, 135, 0.3), 0 0 13px rgba(86, 177, 108, 0.2); }
@@ -358,6 +374,7 @@
 .alternative-row:hover .alternative-position { color: #b9efc2; }
 .alternative-row.is-hover-dismissed:hover { border-color: var(--line); background: #222724; box-shadow: none; }
 .alternative-rank { grid-area: rank; color: #c5d0c6; font-size: 11px; }
+.score-legend { margin: 5px 0 0; color: var(--muted); font-size: 10px; line-height: 1.35; }
 .alternative-position { grid-area: position; color: var(--text); font-size: 13px; font-weight: 750; }
 .alternative-summary { grid-area: summary; color: #d3ddd4; font-size: 12px; }
 .alternative-arrow { grid-area: arrow; color: #d4c0ef; font-size: 15px; }

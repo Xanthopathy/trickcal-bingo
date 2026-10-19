@@ -13,7 +13,9 @@ import {
 } from '../game'
 
 const PIECE_TYPES = Object.keys(DEFAULT_PIECE_RATES) as PieceType[]
-const COVERAGE_VALUE = 1_000_000
+const COVERAGE_VALUE = 100
+const BINGO_TIE_VALUE = 1
+const GAP_PENALTY = 0.5
 export const MIN_MEANINGFUL_COVERAGE_DIFFERENCE = 0.5
 
 export type PlannerPatience = 1 | 2 | 3 | 4 | 5
@@ -41,6 +43,7 @@ export type FullBoardCandidate = AdaptivePlacementCandidate & {
   projectedCoverage: number
   projectedBingos: number
   projectedGapCount: number
+  recommendationScore: number
   horizonDraws: number
   sampleCount: number
 }
@@ -147,7 +150,7 @@ const boardScore = (
   board: Board,
 ): number => {
   const summary = getBoardSummary(board)
-  return summary.coveredTiles * COVERAGE_VALUE + summary.completedLines.length * 100 - countTrappedGaps(board) * 20
+  return summary.coveredTiles * COVERAGE_VALUE + summary.completedLines.length * BINGO_TIE_VALUE - countTrappedGaps(board) * GAP_PENALTY
 }
 
 const placementCenters = (piece: PieceType) => {
@@ -186,7 +189,7 @@ const candidateActions = (
       board,
       stored: otherPiece,
       newTiles: delta.newCells.length,
-      score: summary.coveredTiles * COVERAGE_VALUE + summary.completedLines.length * 100 - countTrappedGaps(board) * 20,
+      score: summary.coveredTiles * COVERAGE_VALUE + summary.completedLines.length * BINGO_TIE_VALUE - countTrappedGaps(board) * GAP_PENALTY,
       center,
     }
   })
@@ -290,10 +293,10 @@ const rankPiecePlans = (
   pieceRates: PieceRates,
   searchSettings: PlannerSearchSettings,
 ): FullBoardCandidate[] => {
-  const rankedCandidates = rankPlacements(board, piece, pieceRates)
-  const hasUsefulPlacement = rankedCandidates.some((candidate) => candidate.newCells > 0)
+  const rankedPlacements = rankPlacements(board, piece, pieceRates)
+  const hasUsefulPlacement = rankedPlacements.some((candidate) => candidate.newCells > 0)
   const seenAddedTileSets = new Set<string>()
-  const candidates = rankedCandidates.filter((candidate) => {
+  const candidates = rankedPlacements.filter((candidate) => {
     if (hasUsefulPlacement && candidate.newCells === 0) return false
     const addedTileSet = getPlacementDelta(board, piece, candidate.center).newCells
       .map(({ row, col }) => row * BOARD_SIZE + col)
@@ -324,11 +327,11 @@ const rankPiecePlans = (
       stats.coverageTotal += summary.coveredTiles
       stats.bingoTotal += summary.completedLines.length
       stats.gapTotal += trappedGaps
-      stats.scoreTotal += summary.coveredTiles * COVERAGE_VALUE + summary.completedLines.length * 100 - trappedGaps * 20
+      stats.scoreTotal += summary.coveredTiles * COVERAGE_VALUE + summary.completedLines.length * BINGO_TIE_VALUE - trappedGaps * GAP_PENALTY
     }
   }
 
-  return candidateStats
+  const rankedCandidates = candidateStats
     .map(({ candidate, coverageTotal, bingoTotal, gapTotal, scoreTotal }) => {
       const projectedCoverage = coverageTotal / scenarios.length
       return {
@@ -353,6 +356,12 @@ const rankPiecePlans = (
       left.center.col - right.center.col,
     )
     .slice(0, 4)
+
+  const bestScore = rankedCandidates[0]?.score ?? 0
+  return rankedCandidates.map((candidate) => ({
+    ...candidate,
+    recommendationScore: Math.max(0, Math.round((100 - (bestScore - candidate.score)) * 10) / 10),
+  }))
 }
 
 export const planFullBoard = (input: FullBoardPlannerInput): FullBoardPlannerResult => {

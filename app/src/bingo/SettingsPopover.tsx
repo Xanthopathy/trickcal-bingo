@@ -8,6 +8,7 @@ type SettingsPopoverProps = Pick<
   | 'pieceRates'
   | 'plannerPatience'
   | 'priorityWeights'
+  | 'resetSettings'
   | 'resetSiteData'
   | 'setSettingsOpen'
   | 'setPlannerPatience'
@@ -31,6 +32,7 @@ export function SettingsPopover({ session }: { session: SettingsPopoverProps }) 
     pieceRates,
     plannerPatience,
     priorityWeights,
+    resetSettings,
     resetSiteData,
     setSettingsOpen,
     setPlannerPatience,
@@ -160,6 +162,9 @@ export function SettingsPopover({ session }: { session: SettingsPopoverProps }) 
             ))}
           </div>
 
+          <button className="reset-settings-button" type="button" onClick={resetSettings}>
+            Restore default settings
+          </button>
           <button className="reset-data-button" type="button" onClick={resetSiteData}>
             Reset all site data
           </button>

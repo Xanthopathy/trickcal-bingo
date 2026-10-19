@@ -490,10 +490,15 @@ export function useBingoSession() {
     setPriorityWeights(nextWeights)
   }
 
+  const resetSettings = () => {
+    setPieceRates({ ...DEFAULT_PIECE_RATES })
+    setPriorityWeights({ ...DEFAULT_PRIORITY_WEIGHTS })
+    setSkipThreshold(DEFAULT_SKIP_THRESHOLD)
+    setPlannerPatience(DEFAULT_PLANNER_PATIENCE)
+  }
+
   const resetSiteData = () => {
     const emptyBoard = createEmptyBoard()
-    const defaultRates = { ...DEFAULT_PIECE_RATES }
-    const defaultWeights = { ...DEFAULT_PRIORITY_WEIGHTS }
     try {
       window.localStorage.clear()
     } catch {
@@ -502,10 +507,7 @@ export function useBingoSession() {
     setBoard(emptyBoard)
     setPieceType('cross')
     setSlotPieceType(null)
-    setPieceRates(defaultRates)
-    setPriorityWeights(defaultWeights)
-    setSkipThreshold(DEFAULT_SKIP_THRESHOLD)
-    setPlannerPatience(DEFAULT_PLANNER_PATIENCE)
+    resetSettings()
     setHistory([])
     setSelectedPosition(null)
     setCursorPosition(null)
@@ -544,6 +546,7 @@ export function useBingoSession() {
     commitPlacement,
     clickBoardPosition,
     resetSiteData,
+    resetSettings,
     selectPiece,
     setCursorPosition,
     setDismissedHoverPosition,
