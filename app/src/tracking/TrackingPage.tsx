@@ -1,13 +1,6 @@
 import type { PieceType } from '../game'
 import { PIECE_OPTIONS } from '../bingo/constants'
-
-const PIECE_DESCRIPTIONS: Record<PieceType, string> = {
-  plus: '3×3 w/o corners',
-  cross: '3×3 w/o edge centers',
-  square: 'Full 3×3',
-  horizontal: 'Wide 7×1',
-  vertical: 'Tall 1×7',
-}
+import { PieceIcon } from '../bingo/PieceIcon'
 
 type TrackingPageProps = {
   trackedPieceCounts: Record<PieceType, number>
@@ -42,7 +35,6 @@ export function TrackingPage({ trackedPieceCounts, trackingMode, updateTrackedPi
           <thead>
             <tr>
               <th scope="col">Piece</th>
-              <th scope="col">Description</th>
               <th scope="col" className="tracking-number">Amount</th>
               <th scope="col" className="tracking-number">Rate</th>
             </tr>
@@ -50,8 +42,12 @@ export function TrackingPage({ trackedPieceCounts, trackingMode, updateTrackedPi
           <tbody>
             {PIECE_OPTIONS.map(({ type, name }) => (
               <tr key={type}>
-                <th scope="row"><span className={`tracking-piece-marker piece-${type}`} />{name}</th>
-                <td>{PIECE_DESCRIPTIONS[type]}</td>
+                <th scope="row">
+                  <span className="tracking-piece-cell">
+                    <PieceIcon pieceType={type} />
+                    <span>{name}</span>
+                  </span>
+                </th>
                 <td className="tracking-number">
                   <input
                     className="tracking-amount-input"
@@ -71,7 +67,7 @@ export function TrackingPage({ trackedPieceCounts, trackingMode, updateTrackedPi
           </tbody>
           <tfoot>
             <tr>
-              <th scope="row" colSpan={2}>Total</th>
+              <th scope="row">Total</th>
               <td className="tracking-number">{totalPieces.toLocaleString()}</td>
               <td className="tracking-number">100.00%</td>
             </tr>

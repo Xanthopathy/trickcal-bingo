@@ -12,6 +12,8 @@ type PieceControlsProps = Pick<
   | 'skipThreshold'
   | 'slotPieceType'
   | 'swapSlot'
+  | 'trackingMode'
+  | 'setTrackingMode'
 >
 
 const pieceName = (pieceType: PieceType | null) =>
@@ -26,6 +28,8 @@ export function PieceControls({ session }: { session: PieceControlsProps }) {
     skipThreshold,
     slotPieceType,
     swapSlot,
+    trackingMode,
+    setTrackingMode,
   } = session
 
   return (
@@ -110,6 +114,21 @@ export function PieceControls({ session }: { session: PieceControlsProps }) {
           </button>
         </div>
       </section>
+
+      <div className="tracking-mode-control">
+        <div>
+          <strong>Piece tracking</strong>
+          <span>{trackingMode ? 'Planner placements are counted' : 'Sandbox placements are not counted'}</span>
+        </div>
+        <button
+          className={`tracking-mode-button ${trackingMode ? 'is-on' : ''}`}
+          type="button"
+          aria-pressed={trackingMode}
+          onClick={() => setTrackingMode(!trackingMode)}
+        >
+          {trackingMode ? 'Tracking' : 'Sandbox'}
+        </button>
+      </div>
     </aside>
   )
 }
