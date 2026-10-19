@@ -391,7 +391,7 @@ This is a short lookahead heuristic, not a full-game solver. Its score is a rank
 
 ### E. Current Full-Board Planner
 
-The planner evaluates each available first move with a worker-backed beam search over eight repeatable piece-draw sequences, up to four future draws. It models the hand and storage slot and ranks projected tile coverage at that horizon first, then configured bingo value and enclosed-gap risk. This is a bounded estimate, not exhaustive search; compare it against the simulation baselines on held-out seeds before treating it as stronger.
+The planner evaluates each available first move with a worker-backed beam search over eight repeatable piece-draw sequences, up to four future draws. It models the hand and storage slot and ranks projected tile coverage at that horizon first, then bingo count and enclosed-gap risk. Adjustable heuristic priorities are used only by Simulation strategies. This is a bounded estimate, not exhaustive search; compare it against the simulation baselines on held-out seeds before treating it as stronger.
 
 Unknown notable-tile locations are not predicted by the live planner. Manual reward observations and skip advice remain separate concerns.
 

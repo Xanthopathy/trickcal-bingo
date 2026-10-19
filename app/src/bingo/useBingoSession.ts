@@ -8,7 +8,6 @@ import {
   countLineCells,
   createEmptyBoard,
   getBoardSummary,
-  getEffectiveLineWeight,
   getPlacementCells,
   placePiece,
   type Board,
@@ -148,7 +147,7 @@ export function useBingoSession() {
   } | null>(null)
   const boardGridRef = useRef<HTMLDivElement>(null)
   const plannerWorkerRef = useRef<Worker | null>(null)
-  const plannerKey = JSON.stringify({ board, pieceType, slotPieceType, pieceRates, priorityWeights })
+  const plannerKey = JSON.stringify({ board, pieceType, slotPieceType, pieceRates })
 
   useEffect(() => {
     if (!pieceType) return
@@ -170,12 +169,12 @@ export function useBingoSession() {
       worker.terminate()
       plannerWorkerRef.current = null
     }
-    worker.postMessage({ board, hand: pieceType, stored: slotPieceType, pieceRates, priorityWeights })
+    worker.postMessage({ board, hand: pieceType, stored: slotPieceType, pieceRates })
     return () => {
       worker.terminate()
       if (plannerWorkerRef.current === worker) plannerWorkerRef.current = null
     }
-  }, [board, pieceType, slotPieceType, pieceRates, priorityWeights, plannerKey])
+  }, [board, pieceType, slotPieceType, pieceRates, plannerKey])
 
   const plannerResultIsCurrent = plannerResult?.key === plannerKey
   const recommendations = useMemo<FullBoardCandidate[]>(
@@ -212,13 +211,9 @@ export function useBingoSession() {
       count: countLineCells(board, line),
     }))
       .filter(({ count }) => count > 0 && count < BOARD_SIZE)
-      .sort(
-        (left, right) =>
-          getEffectiveLineWeight(right.line, pieceRates, priorityWeights) * right.count -
-          getEffectiveLineWeight(left.line, pieceRates, priorityWeights) * left.count,
-      )
+      .sort((left, right) => right.count - left.count)
       .slice(0, 3),
-    [board, pieceRates, priorityWeights],
+    [board],
   )
   const totalPieceRate = useMemo(
     () => Object.values(pieceRates).reduce((total, rate) => total + rate, 0),
@@ -378,7 +373,7 @@ export function useBingoSession() {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [board, cursorPosition, history, hoveredPosition, pieceRates, pieceType, priorityWeights, recommendations, selectedPosition, slotPieceType])
+  }, [board, cursorPosition, history, hoveredPosition, pieceType, recommendations, selectedPosition, slotPieceType])
 
   const commitPlacement = (center: Position | null) => {
     if (!center || !pieceType) return
@@ -491,11 +486,6 @@ export function useBingoSession() {
       [key]: Math.max(0, Math.min(12, Number.isFinite(value) ? value : 0)),
     }
     setPriorityWeights(nextWeights)
-    setSelectedPosition(null)
-    setCursorPosition(null)
-    setHoveredPosition(null)
-    setDismissedHoverPosition(null)
-    setLastBoardClick(null)
   }
 
   const resetSiteData = () => {

@@ -110,9 +110,10 @@ export function SettingsPopover({ session }: { session: SettingsPopoverProps }) 
 
           <div className="settings-group">
             <div className="settings-group-heading">
-              <h3>Heuristic priorities</h3>
+              <h3>Simulation heuristic priorities</h3>
               <span>Experimental</span>
             </div>
+            <p>Used by Simulation strategies only; the planner ignores these values.</p>
             {PRIORITY_OPTIONS.map(({ key, label }) => (
               <label className="setting-row" key={key}>
                 <span>{label}</span>

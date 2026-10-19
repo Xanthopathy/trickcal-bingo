@@ -6,7 +6,7 @@ A plain-language guide to what the engine does today and how to improve it witho
 
 The planner now uses a **bounded full-board search**. For every possible current placement, it explores likely future piece draws, legal placements, and hand/storage choices, then estimates the eventual board.
 
-Projected tile coverage after the next four draws is the primary comparison. Configured bingo value and enclosed empty gaps break close ties. The search currently evaluates eight shared, repeatable draw samples using a narrow beam; it is useful guidance, not an exhaustive solver or a real-world probability guarantee.
+Projected tile coverage after the next four draws is the primary comparison. Bingo count and enclosed empty gaps break close ties. The search currently evaluates eight shared, repeatable draw samples using a narrow beam; it is useful guidance, not an exhaustive solver or a real-world probability guarantee.
 
 The planner recommends one move at a time and replans after the board, hand, storage, or estimated piece rates change. The offline simulator remains separate and compares baseline strategies on identical seeded games.
 
@@ -19,9 +19,9 @@ For each possible placement, the engine roughly asks:
 - How much of the board can likely be covered after future draws?
 - Can the current and stored pieces be used in a useful order?
 - Does a move leave enclosed empty cells or awkward regions?
-- How many bingos are likely, and how valuable are they under the configured weights?
+- How many bingos are likely, after coverage has been considered?
 
-The planner evaluates eight repeatable future draw sequences, each up to four turns, with a narrow beam of candidate board states. It ranks projected coverage at that horizon first, then configured bingo value and trapped-gap risk. The displayed comparisons describe these sampled searches; they are not guarantees or validated estimates over all possible games.
+The planner evaluates eight repeatable future draw sequences, each up to four turns, with a narrow beam of candidate board states. It ranks projected coverage at that horizon first, then bingo count and trapped-gap risk. The displayed comparisons describe these sampled searches; they are not guarantees or validated estimates over all possible games.
 
 When a piece is in storage, every simulated turn can use either the new draw or the stored piece, placing the unused piece into storage. Both the hand and storage-piece plans are compared for swap advice.
 
@@ -32,7 +32,7 @@ There are two different kinds of numbers, and they do different jobs:
 - **Piece rates** are estimates of how often each type of piece appears. They help adjust how achievable rows, columns, and diagonals seem.
 - **Piece affinity** is a score multiplier for shapes that naturally help certain line types. For example, `1.35` means a Cross gets 35% extra line-progress score for a diagonal. It does **not** mean a 35% chance of drawing a Cross or completing a bingo.
 
-The configured piece rates and bingo weights influence future draws and secondary bingo scoring. They are estimates and hand-picked priorities, not learned values.
+Piece rates affect the planner's future draws. The adjustable heuristic priorities are used only by Simulation strategies; the live planner ignores them and counts bingos equally as a secondary criterion.
 
 ## What “Looking Ahead” Means
 

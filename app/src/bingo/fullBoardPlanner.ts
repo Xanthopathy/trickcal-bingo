@@ -2,7 +2,6 @@ import {
   BOARD_SIZE,
   DEFAULT_PIECE_RATES,
   getBoardSummary,
-  getEffectiveLineWeight,
   getPlacementDelta,
   placePiece,
   rankPlacements,
@@ -11,7 +10,6 @@ import {
   type PieceRates,
   type PlacementCandidate,
   type PieceType,
-  type PriorityWeights,
 } from '../game'
 
 const PIECE_TYPES = Object.keys(DEFAULT_PIECE_RATES) as PieceType[]
@@ -34,7 +32,6 @@ export type FullBoardPlannerInput = {
   hand: PieceType
   stored: PieceType | null
   pieceRates: PieceRates
-  priorityWeights: PriorityWeights
 }
 
 export type FullBoardPlannerResult = {
@@ -124,15 +121,9 @@ const countTrappedGaps = (board: Board): number => {
 
 const boardScore = (
   board: Board,
-  pieceRates: PieceRates,
-  priorityWeights: PriorityWeights,
 ): number => {
   const summary = getBoardSummary(board)
-  const bingoValue = summary.completedLines.reduce(
-    (total, line) => total + getEffectiveLineWeight(line, pieceRates, priorityWeights),
-    0,
-  )
-  return summary.coveredTiles * COVERAGE_VALUE + bingoValue * 100 - countTrappedGaps(board) * 20
+  return summary.coveredTiles * COVERAGE_VALUE + summary.completedLines.length * 100 - countTrappedGaps(board) * 20
 }
 
 const placementCenters = (piece: PieceType) => {
@@ -155,22 +146,16 @@ const candidateActions = (
   state: FutureState,
   piece: PieceType,
   otherPiece: PieceType | null,
-  pieceRates: PieceRates,
-  priorityWeights: PriorityWeights,
 ): FutureState[] => {
   const candidates = placementCenters(piece).map((center) => {
     const delta = getPlacementDelta(state.board, piece, center)
     const board = placePiece(state.board, piece, center)
     const summary = getBoardSummary(board)
-    const bingoValue = summary.completedLines.reduce(
-      (total, line) => total + getEffectiveLineWeight(line, pieceRates, priorityWeights),
-      0,
-    )
     return {
       board,
       stored: otherPiece,
       newTiles: delta.newCells.length,
-      score: summary.coveredTiles * COVERAGE_VALUE + bingoValue * 100 - countTrappedGaps(board) * 20,
+      score: summary.coveredTiles * COVERAGE_VALUE + summary.completedLines.length * 100 - countTrappedGaps(board) * 20,
       center,
     }
   })
@@ -213,13 +198,11 @@ const searchScenario = (
   initialBoard: Board,
   initialStored: PieceType | null,
   draws: PieceType[],
-  pieceRates: PieceRates,
-  priorityWeights: PriorityWeights,
 ) => {
   let beam: FutureState[] = [{
     board: initialBoard,
     stored: initialStored,
-    score: boardScore(initialBoard, pieceRates, priorityWeights),
+    score: boardScore(initialBoard),
   }]
   for (const hand of draws) {
     const nextStates = new Map<string, FutureState>()
@@ -236,7 +219,7 @@ const searchScenario = (
         ) === index,
       )
       for (const { piece, otherPiece } of uniqueChoices) {
-        for (const next of candidateActions(state, piece, otherPiece, pieceRates, priorityWeights)) {
+        for (const next of candidateActions(state, piece, otherPiece)) {
           const summary = getBoardSummary(next.board)
           if (summary.coveredTiles === BOARD_SIZE * BOARD_SIZE) {
             nextStates.set(boardKey(next.board), next)
@@ -273,9 +256,20 @@ const rankPiecePlans = (
   storedPiece: PieceType | null,
   scenarios: PieceType[][],
   pieceRates: PieceRates,
-  priorityWeights: PriorityWeights,
 ): FullBoardCandidate[] => {
-  const candidates = rankPlacements(board, piece, pieceRates, priorityWeights)
+  const rankedCandidates = rankPlacements(board, piece, pieceRates)
+  const hasUsefulPlacement = rankedCandidates.some((candidate) => candidate.newCells > 0)
+  const seenAddedTileSets = new Set<string>()
+  const candidates = rankedCandidates.filter((candidate) => {
+    if (hasUsefulPlacement && candidate.newCells === 0) return false
+    const addedTileSet = getPlacementDelta(board, piece, candidate.center).newCells
+      .map(({ row, col }) => row * BOARD_SIZE + col)
+      .sort((left, right) => left - right)
+      .join(',')
+    if (seenAddedTileSets.has(addedTileSet)) return false
+    seenAddedTileSets.add(addedTileSet)
+    return true
+  })
   const candidateStats: CandidateStats[] = candidates.map((candidate) => ({
     candidate,
     coverageTotal: 0,
@@ -292,17 +286,11 @@ const rankPiecePlans = (
         nextBoard,
         initialStored,
         scenario,
-        pieceRates,
-        priorityWeights,
-      )
-      const bingoValue = summary.completedLines.reduce(
-        (total, line) => total + getEffectiveLineWeight(line, pieceRates, priorityWeights),
-        0,
       )
       stats.coverageTotal += summary.coveredTiles
       stats.bingoTotal += summary.completedLines.length
       stats.gapTotal += trappedGaps
-      stats.scoreTotal += summary.coveredTiles * COVERAGE_VALUE + bingoValue * 100 - trappedGaps * 20
+      stats.scoreTotal += summary.coveredTiles * COVERAGE_VALUE + summary.completedLines.length * 100 - trappedGaps * 20
     }
   }
 
@@ -345,7 +333,6 @@ export const planFullBoard = (input: FullBoardPlannerInput): FullBoardPlannerRes
       input.stored,
       scenarios,
       pieceRates,
-      input.priorityWeights,
     ),
     storedRecommendations: input.stored
       ? rankPiecePlans(
@@ -354,7 +341,6 @@ export const planFullBoard = (input: FullBoardPlannerInput): FullBoardPlannerRes
         input.hand,
         scenarios,
         pieceRates,
-        input.priorityWeights,
       )
       : [],
     futureTurns: FUTURE_TURNS,
