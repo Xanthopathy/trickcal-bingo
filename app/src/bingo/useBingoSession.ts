@@ -201,7 +201,6 @@ export function useBingoSession() {
     candidate?: FullBoardCandidate | null
     error?: string
   } | null>(null)
-  const boardGridRef = useRef<HTMLDivElement>(null)
   const plannerWorkerRef = useRef<Worker | null>(null)
   const customPlannerWorkerRef = useRef<Worker | null>(null)
   const plannerKey = JSON.stringify({
@@ -392,35 +391,6 @@ export function useBingoSession() {
       // Continue using the board if browser storage is unavailable.
     }
   }, [board, pieceType, slotPieceType, pieceRates, plannerStrategy, plannerBenchmark, skipThreshold, plannerPatience, trackedPieceCounts, trackingMode])
-
-  useEffect(() => {
-    const boardGrid = boardGridRef.current
-    if (!boardGrid) return
-
-    let lastWheelTime = 0
-    const handleWheel = (event: WheelEvent) => {
-      event.preventDefault()
-      const now = Date.now()
-      if (now - lastWheelTime < 140 || event.deltaY === 0) return
-      lastWheelTime = now
-      const direction = Math.sign(event.deltaY)
-
-      setPieceType((current) => {
-        const currentIndex = PIECE_OPTIONS.findIndex((option) => option.type === current)
-        const nextIndex = currentIndex < 0
-          ? direction > 0 ? 0 : PIECE_OPTIONS.length - 1
-          : (currentIndex + direction + PIECE_OPTIONS.length) % PIECE_OPTIONS.length
-        return PIECE_OPTIONS[nextIndex].type
-      })
-      setCursorPosition(null)
-      setHoveredPosition(null)
-      setSelectedPosition(null)
-      setLastBoardClick(null)
-    }
-
-    boardGrid.addEventListener('wheel', handleWheel, { passive: false })
-    return () => boardGrid.removeEventListener('wheel', handleWheel)
-  }, [])
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -665,7 +635,6 @@ export function useBingoSession() {
   return {
     activePosition,
     board,
-    boardGridRef,
     completedLines,
     coveredCount,
     cursorPosition,

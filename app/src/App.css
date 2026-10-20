@@ -174,7 +174,7 @@
 
 .analysis-column,
 .board-section { min-width: 0; background: var(--surface); color: var(--text); }
-.analysis-column { min-height: 460px; padding: 13px 16px; border-block: 2px solid var(--line); }
+.analysis-column { padding: 13px 16px; border-block: 2px solid var(--line); }
 .piece-controls { grid-area: controls; display: flex; flex-direction: column; border-left: 2px solid #8b834c; border-radius: 6px 0 0 6px; }
 .board-analysis { grid-area: analysis; border-right: 2px solid #746286; border-radius: 0 6px 6px 0; }
 .analysis-heading { display: flex; align-items: end; justify-content: space-between; gap: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
@@ -393,8 +393,8 @@
 .primary-button:hover:not(:disabled) { background: #408e54; }
 .primary-button:disabled { background: #56635a; color: #d6ddd7; cursor: default; }
 .primary-button > span { font-size: 17px; }
-.swap-advice { box-sizing: border-box; min-height: 56px; display: flex; align-items: center; margin-top: 10px; padding: 10px; border: 1px solid color-mix(in srgb, currentColor 28%, transparent); border-radius: 4px; background: color-mix(in srgb, currentColor 6%, transparent); color: inherit; font-size: 12px; line-height: 1.4; }
-.tracking-mode-control { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: auto; padding-top: 12px; border-top: 1px solid var(--line); }
+.swap-advice { box-sizing: border-box; display: flex; align-items: center; margin-top: 10px; padding: 10px; border: 1px solid color-mix(in srgb, currentColor 28%, transparent); border-radius: 4px; background: color-mix(in srgb, currentColor 6%, transparent); color: inherit; font-size: 12px; line-height: 1.4; }
+.tracking-mode-control { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
 .tracking-mode-control > div { min-width: 0; display: grid; gap: 3px; }
 .tracking-mode-control strong { color: var(--text); font-size: 12px; }
 .tracking-mode-control span { color: var(--muted); font-size: 10px; line-height: 1.35; }

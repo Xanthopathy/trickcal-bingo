@@ -11,7 +11,6 @@ type BoardPanelProps = Pick<
   BingoSession,
   | 'activePosition'
   | 'board'
-  | 'boardGridRef'
   | 'clickBoardPosition'
   | 'completedLines'
   | 'coveredCount'
@@ -30,7 +29,6 @@ export function BoardPanel({ session }: { session: BoardPanelProps }) {
   const {
     activePosition,
     board,
-    boardGridRef,
     clickBoardPosition,
     completedLines,
     coveredCount,
@@ -88,7 +86,7 @@ export function BoardPanel({ session }: { session: BoardPanelProps }) {
             {letter}
           </span>
         ))}
-        <div className="board-grid" ref={boardGridRef} role="grid" aria-label="7 by 7 bingo board" style={{ gridRow: '2 / span 7', gridColumn: '2 / span 7' }}>
+        <div className="board-grid" role="grid" aria-label="7 by 7 bingo board" style={{ gridRow: '2 / span 7', gridColumn: '2 / span 7' }}>
           {board.map((row, rowIndex) =>
             row.map((covered, colIndex) => {
               const cellPosition = { row: rowIndex, col: colIndex }
@@ -183,7 +181,6 @@ export function BoardPanel({ session }: { session: BoardPanelProps }) {
         <span><i className="legend-overlap" /> Overlap</span>
       </div>
       <p className="board-hint">Click to preview | Click again to place</p>
-      <p className="board-scroll-note">Scroll over the board to cycle the hand piece.</p>
       <div className="control-note">
         <span>1–5: Select Piece | 7–0: Select Candidate</span>
         <span>S: Swap | Z: Undo | P: Place | ESC: Clear Preview</span>
