@@ -1,4 +1,4 @@
-import { formatBingoReward, type Position } from '../game'
+import type { Position } from '../game'
 import type { BingoSession } from './useBingoSession'
 import { MIN_MEANINGFUL_COVERAGE_DIFFERENCE, type FullBoardCandidate } from './fullBoardPlanner'
 import { PIECE_OPTIONS, positionLabel } from './constants'
@@ -7,6 +7,9 @@ import { ADAPTIVE_STRATEGIES } from '../simulation/engine'
 type AnalysisPanelProps = Pick<
   BingoSession,
   | 'activePosition'
+  | 'customPlacement'
+  | 'customPlacementError'
+  | 'isCustomPlacementThinking'
   | 'commitPlacement'
   | 'dismissedHoverPosition'
   | 'hoveredPosition'
@@ -40,78 +43,36 @@ const candidateComparison = (
   comparison: FullBoardCandidate | undefined,
   isTopPick: boolean,
 ) => {
-  if (!comparison) return 'No other evaluated move is available for comparison.'
+  if (!comparison) return 'No comparison available.'
 
   const priorityBingoDifference =
     candidate.benchmark.averagePriorityBingos - comparison.benchmark.averagePriorityBingos
   if (Math.abs(priorityBingoDifference) >= 0.1) {
-    const direction = priorityBingoDifference > 0 ? 'more' : 'fewer'
-    return `At ${candidate.benchmark.tiles} tiles, this projects ${Math.abs(priorityBingoDifference).toFixed(1)} ${direction} priority bingos than ${isTopPick ? 'the next-best move' : 'the top recommendation'}.`
+    const direction = priorityBingoDifference > 0 ? '+' : ''
+    return `${direction}${priorityBingoDifference.toFixed(1)} priority bingos vs ${isTopPick ? 'next best' : 'top pick'}`
   }
 
   const benchmarkBingoDifference = candidate.benchmark.averageBingos - comparison.benchmark.averageBingos
   if (Math.abs(benchmarkBingoDifference) >= 0.1) {
-    const direction = benchmarkBingoDifference > 0 ? 'more' : 'fewer'
-    return `Priority bingos are close; this projects ${Math.abs(benchmarkBingoDifference).toFixed(1)} ${direction} total bingos at ${candidate.benchmark.tiles} tiles.`
+    const direction = benchmarkBingoDifference > 0 ? '+' : ''
+    return `${direction}${benchmarkBingoDifference.toFixed(1)} total bingos vs ${isTopPick ? 'next best' : 'top pick'}`
   }
 
-  const coinRewardDifference =
-    candidate.benchmark.averageCoinRewards - comparison.benchmark.averageCoinRewards
-  if (Math.abs(coinRewardDifference) >= 0.1) {
-    const direction = coinRewardDifference > 0 ? 'more' : 'fewer'
-    return `Bingo results are close; this projects ${Math.abs(coinRewardDifference).toFixed(1)} ${direction} coin rewards at ${candidate.benchmark.tiles} tiles.`
+  const readyDifference = candidate.skipReadyProbability - comparison.skipReadyProbability
+  if (Math.abs(readyDifference) >= 0.05) {
+    const direction = readyDifference > 0 ? '+' : ''
+    return `${direction}${Math.round(readyDifference * 100)}% skip-ready vs ${isTopPick ? 'next best' : 'top pick'}`
   }
 
-  const coverageDifference = candidate.projectedCoverage - comparison.projectedCoverage
-  const comparisonName = isTopPick ? 'the next-best move' : 'the top recommendation'
-  if (Math.abs(coverageDifference) >= MIN_MEANINGFUL_COVERAGE_DIFFERENCE) {
-    const direction = coverageDifference > 0 ? 'more' : 'fewer'
-    return `At the simulated board stop, this projects ${Math.abs(coverageDifference).toFixed(1)} ${direction} covered tiles than ${comparisonName}.`
-  }
-
-  const bingoDifference = candidate.projectedBingos - comparison.projectedBingos
-  if (Math.abs(bingoDifference) >= 0.5) {
-    const direction = bingoDifference > 0 ? 'more' : 'fewer'
-    return `Projected coverage is close; this projects ${Math.abs(bingoDifference).toFixed(1)} ${direction} completed bingos than ${comparisonName} at the simulated stop.`
-  }
-
-  const priorityProgressDifference =
-    candidate.projectedPriorityProgress - comparison.projectedPriorityProgress
-  if (Math.abs(priorityProgressDifference) >= 0.5) {
-    const direction = priorityProgressDifference > 0 ? 'more' : 'less'
-    return `Coverage and bingo projections are close; this leaves ${Math.abs(priorityProgressDifference).toFixed(1)} ${direction} filled cells across the diagonals, Row 4, and Column D than ${comparisonName} at the simulated stop.`
-  }
-
-  const immediateBingoDifference = candidate.immediatePriorityBingos - comparison.immediatePriorityBingos
-  if (immediateBingoDifference !== 0) {
-    const direction = immediateBingoDifference > 0 ? 'more' : 'fewer'
-    return `Full-board projections are close; this placement immediately completes ${Math.abs(immediateBingoDifference)} ${direction} core bingo${Math.abs(immediateBingoDifference) === 1 ? '' : 's'} than ${comparisonName}.`
-  }
-
-  const immediateProgressDifference = candidate.immediatePriorityProgress - comparison.immediatePriorityProgress
-  if (immediateProgressDifference !== 0) {
-    const direction = immediateProgressDifference > 0 ? 'more' : 'fewer'
-    return `Full-board projections are close; this placement immediately adds ${Math.abs(immediateProgressDifference)} ${direction} cells across the core lines than ${comparisonName}.`
-  }
-
-  const newCellDifference = candidate.newCells - comparison.newCells
-  if (newCellDifference !== 0) {
-    const direction = newCellDifference > 0 ? 'more' : 'fewer'
-    return `Full-board projections are close; this placement immediately covers ${Math.abs(newCellDifference)} ${direction} new tiles than ${comparisonName}.`
-  }
-
-  const gapDifference = candidate.projectedGapCount - comparison.projectedGapCount
-  if (Math.abs(gapDifference) >= 1) {
-    const direction = gapDifference < 0 ? 'fewer' : 'more'
-    return `Projected coverage is close; this leaves ${Math.abs(gapDifference).toFixed(1)} ${direction} enclosed empty gaps than ${comparisonName} at the simulated stop.`
-  }
-
-  return `These moves are too close to distinguish in ${candidate.sampleCount} full-board rollouts. Treat them as alternatives, not a proven ranking.`
+  return 'Similar projections.'
 }
 
 export function AnalysisPanel({ session }: { session: AnalysisPanelProps }) {
   const {
     activePosition,
+    customPlacement,
+    customPlacementError,
+    isCustomPlacementThinking,
     commitPlacement,
     dismissedHoverPosition,
     pieceType,
@@ -153,15 +114,20 @@ export function AnalysisPanel({ session }: { session: AnalysisPanelProps }) {
       candidate.newCells === recommendations[0].newCells,
     )
   const activeCandidate = isCustomPosition
-    ? null
+    ? customPlacement && sameCandidate(customPlacement, activePosition)
+      ? customPlacement
+      : null
     : recommendations[selectedCandidateIndex] ?? null
-  const comparisonCandidate = selectedCandidateIndex === 0
-    ? recommendations[1]
-    : recommendations[0]
+  const comparisonCandidate = isCustomPosition
+    ? recommendations[0]
+    : selectedCandidateIndex === 0
+      ? recommendations[1]
+      : recommendations[0]
+  const activeIsTopPick = !isCustomPosition && selectedCandidateIndex === 0
   const immediateBingoText = activeCandidate
     ? activeCandidate.completedLines.length > 0
-      ? `Completes ${activeCandidate.completedLines.map((line) => `${line.label} (${formatBingoReward(line.reward)})`).join('; ')}.`
-      : 'Does not complete a bingo immediately.'
+      ? `Completes ${activeCandidate.completedLines.length} bingo${activeCandidate.completedLines.length === 1 ? '' : 's'}`
+      : 'No immediate bingo'
     : null
   const storedCoverageDifference = recommendation && storedRecommendation
     ? storedRecommendation.projectedCoverage - recommendation.projectedCoverage
@@ -175,7 +141,7 @@ export function AnalysisPanel({ session }: { session: AnalysisPanelProps }) {
             <p className="section-kicker">FULL-BOARD ROLLOUTS</p>
             <h2>Recommended placement</h2>
           </div>
-          <span className="recommendation-tag">{isPlannerThinking ? 'SEARCHING' : 'COVERAGE FIRST'}</span>
+          <span className="recommendation-tag">{isPlannerThinking ? 'SEARCHING' : `${plannerBenchmark} TILES`}</span>
         </div>
 
         {isPlannerThinking ? (
@@ -187,7 +153,7 @@ export function AnalysisPanel({ session }: { session: AnalysisPanelProps }) {
             <button
               className={`recommended-move ${samePosition(selectedPosition, recommendation.center) ? 'is-selected' : ''} ${samePosition(dismissedHoverPosition, recommendation.center) ? 'is-hover-dismissed' : ''}`}
               type="button"
-              aria-label={`Select recommended placement ${positionLabel(recommendation.center)}`}
+              aria-label={`Select recommended placement ${positionLabel(recommendation.center)}, about ${recommendation.benchmark.averagePriorityBingos.toFixed(1)} priority bingos at ${recommendation.benchmark.tiles} tiles`}
               onMouseEnter={() => chooseForPreview(recommendation.center)}
               onMouseLeave={clearPreview}
               onFocus={() => chooseForPreview(recommendation.center)}
@@ -195,15 +161,14 @@ export function AnalysisPanel({ session }: { session: AnalysisPanelProps }) {
               onClick={() => toggleRecommendation(recommendation.center)}
             >
               <strong>{positionLabel(recommendation.center)}</strong>
-              <p>Top benchmark outcome</p>
-              <span className="move-score">~{recommendation.benchmark.averagePriorityBingos.toFixed(1)} priority / {recommendation.benchmark.averageBingos.toFixed(1)} total bingos at {recommendation.benchmark.tiles} tiles</span>
+              <span className="move-score">~{recommendation.benchmark.averagePriorityBingos.toFixed(1)}</span>
             </button>
           </>
         ) : (
           <p className="empty-note">{pieceType ? 'No full-board plan is available for this position.' : 'Select a piece in hand to calculate a full-board plan.'}</p>
         )}
 
-        {recommendation && <p className="score-legend">Ranked at the {plannerBenchmark}-tile checkpoint using {ADAPTIVE_STRATEGIES.find(({ id }) => id === plannerStrategy)?.name ?? 'the selected strategy'}. Reward types stay separate; projections are estimates, not guarantees.</p>}
+        {recommendation && <p className="score-legend">{plannerBenchmark} tiles · {ADAPTIVE_STRATEGIES.find(({ id }) => id === plannerStrategy)?.name.replace('Adaptive: ', '') ?? 'selected strategy'}</p>}
 
         {recommendations.length > 1 && (
           <div className="alternatives">
@@ -220,12 +185,12 @@ export function AnalysisPanel({ session }: { session: AnalysisPanelProps }) {
                   onBlur={clearPreview}
                   onClick={() => toggleRecommendation(candidate.center)}
                 >
-                  <span className="alternative-rank">0{index + 2} · ~{candidate.benchmark.averagePriorityBingos.toFixed(1)} priority bingos at {candidate.benchmark.tiles}</span>
+                  <span className="alternative-rank">0{index + 2} · ~{candidate.benchmark.averagePriorityBingos.toFixed(1)}</span>
                   <span className="alternative-position">{positionLabel(candidate.center)}</span>
                   <span className="alternative-summary">
                     {candidate.completedLines.length > 0
                       ? `Completes ${candidate.completedLines.length} bingo${candidate.completedLines.length === 1 ? '' : 's'}`
-                      : `+${candidate.newCells} tiles now`}
+                      : `+${candidate.newCells} tiles`}
                   </span>
                 </button>
               ))}
@@ -238,18 +203,21 @@ export function AnalysisPanel({ session }: { session: AnalysisPanelProps }) {
             <div className="candidate-explanation-heading">
               <p className="section-kicker">WHY THIS MOVE</p>
               <strong>{activeCandidate
-                ? `${selectedCandidateIndex === 0 ? 'Top pick' : `Option ${selectedCandidateIndex + 1}`} · ${positionLabel(activeCandidate.center)}`
+                ? `${isCustomPosition ? 'Custom' : selectedCandidateIndex === 0 ? 'Top pick' : `Option ${selectedCandidateIndex + 1}`} · ${positionLabel(activeCandidate.center)}`
                 : 'Custom board position'}</strong>
             </div>
             {activeCandidate ? (
               <>
-                <p>{candidateComparison(activeCandidate, comparisonCandidate, selectedCandidateIndex === 0)}</p>
-                <p>{`Covers ${activeCandidate.newCells} previously empty ${activeCandidate.newCells === 1 ? 'tile' : 'tiles'} now. ${immediateBingoText} The rollout projects ${activeCandidate.projectedPriorityBingos.toFixed(1)} of 4 priority bingos and ${activeCandidate.projectedPriorityProgress.toFixed(1)} filled cells across those lines at the simulated stop.`}</p>
-                <p>{`Estimated skip-ready in ${(activeCandidate.skipReadyProbability * 100).toFixed(0)}% of rollouts. Average rewards per board: ${activeCandidate.projectedReward.leaves.toFixed(1)} LVs, ${activeCandidate.projectedReward.starCandy.toFixed(1)} SC, ${activeCandidate.projectedReward.certificates.toFixed(1)} CRTs.`}</p>
-                <small>{activeCandidate.sampleCount} shared full-board rollouts · about {activeCandidate.projectedTurnsToStop.toFixed(1)} placements to stop.</small>
+                <p>{candidateComparison(activeCandidate, comparisonCandidate, activeIsTopPick)}</p>
+                <dl className="candidate-stats">
+                  <div><dt>{activeCandidate.benchmark.tiles} tiles</dt><dd>~{activeCandidate.benchmark.averagePriorityBingos.toFixed(1)} priority · {activeCandidate.benchmark.averageBingos.toFixed(1)} total</dd></div>
+                  <div><dt>Now</dt><dd>+{activeCandidate.newCells} {activeCandidate.newCells === 1 ? 'tile' : 'tiles'} · {immediateBingoText}</dd></div>
+                  <div><dt>To stop</dt><dd>{Math.round(activeCandidate.skipReadyProbability * 100)}% ready · {activeCandidate.projectedTurnsToStop.toFixed(1)} turns</dd></div>
+                  <div><dt>Rewards / board</dt><dd>{activeCandidate.projectedReward.leaves.toFixed(1)} LV · {activeCandidate.projectedReward.starCandy.toFixed(1)} SC · {activeCandidate.projectedReward.certificates.toFixed(1)} CRT</dd></div>
+                </dl>
               </>
             ) : (
-              <p>Sampled comparisons are available for the recommended move and alternatives listed above.</p>
+              <p>{customPlacementError ?? (isCustomPlacementThinking ? 'Analyzing custom placement…' : 'Click a board position to analyze it.')}</p>
             )}
             <button
               className="primary-button"

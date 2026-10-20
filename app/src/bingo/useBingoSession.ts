@@ -195,8 +195,14 @@ export function useBingoSession() {
     result?: FullBoardPlannerResult
     error?: string
   } | null>(null)
+  const [customPlacementResult, setCustomPlacementResult] = useState<{
+    key: string
+    candidate?: FullBoardCandidate | null
+    error?: string
+  } | null>(null)
   const boardGridRef = useRef<HTMLDivElement>(null)
   const plannerWorkerRef = useRef<Worker | null>(null)
+  const customPlannerWorkerRef = useRef<Worker | null>(null)
   const plannerKey = JSON.stringify({ board, pieceType, slotPieceType, pieceRates, plannerStrategy, plannerBenchmark, skipThreshold, plannerPatience })
 
   const recordPlacement = useCallback((placedPieceType: PieceType) => {
@@ -235,7 +241,7 @@ export function useBingoSession() {
     if (!pieceType) return
     const worker = new Worker(new URL('./planner.worker.ts', import.meta.url), { type: 'module' })
     plannerWorkerRef.current = worker
-    worker.onmessage = (event: MessageEvent<{ result?: FullBoardPlannerResult; error?: string }>) => {
+    worker.onmessage = (event: MessageEvent<{ type: 'plan'; result?: FullBoardPlannerResult; error?: string }>) => {
       if (plannerWorkerRef.current !== worker) return
       setPlannerResult({ key: plannerKey, ...event.data })
       const firstRecommendation = event.data.result?.handRecommendations[0]
@@ -251,7 +257,10 @@ export function useBingoSession() {
       worker.terminate()
       plannerWorkerRef.current = null
     }
-    worker.postMessage({ board, hand: pieceType, stored: slotPieceType, pieceRates, plannerStrategy, benchmarkTiles: plannerBenchmark, skipThreshold, patience: plannerPatience })
+    worker.postMessage({
+      type: 'plan',
+      input: { board, hand: pieceType, stored: slotPieceType, pieceRates, strategy: plannerStrategy, benchmarkTiles: plannerBenchmark, skipThreshold, patience: plannerPatience },
+    })
     return () => {
       worker.terminate()
       if (plannerWorkerRef.current === worker) plannerWorkerRef.current = null
@@ -275,6 +284,55 @@ export function useBingoSession() {
   const plannerError = plannerResultIsCurrent ? plannerResult.error ?? null : null
   const recommendation = recommendations[0] ?? null
   const storedRecommendation = storedRecommendations[0] ?? null
+  const customPlacementKey = selectedPosition && pieceType && plannerResultIsCurrent &&
+    !recommendations.some(({ center }) =>
+      center.row === selectedPosition.row && center.col === selectedPosition.col,
+    )
+    ? `${plannerKey}:${selectedPosition.row}-${selectedPosition.col}`
+    : null
+
+  useEffect(() => {
+    if (!customPlacementKey || !selectedPosition || !pieceType) return
+
+    const worker = new Worker(new URL('./planner.worker.ts', import.meta.url), { type: 'module' })
+    customPlannerWorkerRef.current = worker
+    worker.onmessage = (event: MessageEvent<{
+      type: 'analyze'
+      candidate?: FullBoardCandidate | null
+      error?: string
+    }>) => {
+      if (customPlannerWorkerRef.current !== worker) return
+      setCustomPlacementResult({ key: customPlacementKey, ...event.data })
+      worker.terminate()
+      customPlannerWorkerRef.current = null
+    }
+    worker.onerror = () => {
+      if (customPlannerWorkerRef.current !== worker) return
+      setCustomPlacementResult({ key: customPlacementKey, error: 'The custom placement analysis stopped unexpectedly.' })
+      worker.terminate()
+      customPlannerWorkerRef.current = null
+    }
+    worker.postMessage({
+      type: 'analyze',
+      input: { board, hand: pieceType, stored: slotPieceType, pieceRates, strategy: plannerStrategy, benchmarkTiles: plannerBenchmark, skipThreshold, patience: plannerPatience },
+      center: selectedPosition,
+    })
+
+    return () => {
+      worker.terminate()
+      if (customPlannerWorkerRef.current === worker) customPlannerWorkerRef.current = null
+    }
+  }, [customPlacementKey, selectedPosition, pieceType, board, slotPieceType, pieceRates, plannerStrategy, plannerBenchmark, skipThreshold, plannerPatience])
+
+  const customPlacement = customPlacementResult?.key === customPlacementKey
+    ? customPlacementResult.candidate ?? null
+    : null
+  const isCustomPlacementThinking = Boolean(
+    customPlacementKey && customPlacementResult?.key !== customPlacementKey,
+  )
+  const customPlacementError = customPlacementResult?.key === customPlacementKey
+    ? customPlacementResult.error ?? null
+    : null
   const shouldSwapForHigherCoverage = Boolean(
     recommendation && storedRecommendation &&
     storedRecommendation.projectedCoverage - recommendation.projectedCoverage >= MIN_MEANINGFUL_COVERAGE_DIFFERENCE,
@@ -611,6 +669,9 @@ export function useBingoSession() {
     plannerBenchmark,
     recommendation,
     recommendations,
+    customPlacement,
+    isCustomPlacementThinking,
+    customPlacementError,
     selectedPosition,
     settingsOpen,
     shouldSwapForHigherCoverage,

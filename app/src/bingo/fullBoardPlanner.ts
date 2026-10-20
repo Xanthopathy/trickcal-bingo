@@ -482,6 +482,64 @@ const getDistinctPlacements = (
   })
 }
 
+export const analyzeFullBoardPlacement = (
+  input: FullBoardPlannerInput,
+  center: { row: number; col: number },
+): FullBoardCandidate | null => {
+  const candidate = rankPlacements(input.board, input.hand, input.pieceRates)
+    .find(({ center: placementCenter }) =>
+      placementCenter.row === center.row && placementCenter.col === center.col,
+    )
+  if (!candidate) return null
+
+  const searchSettings = PLANNER_PATIENCE_LEVELS[input.patience]
+  const [rollout] = evaluateFullGamePlacements({
+    strategy: input.strategy,
+    benchmarkTiles: input.benchmarkTiles,
+    board: input.board,
+    hand: input.hand,
+    stored: input.stored,
+    rates: input.pieceRates,
+    priorities: input.priorityWeights,
+    skipThreshold: input.skipThreshold,
+    seed: createScenarioSeed(input.board, normalizeRates(input.pieceRates)),
+    samples: searchSettings.samples,
+    candidates: [{ piece: input.hand, center }],
+  })
+  if (!rollout) return null
+
+  const immediateBoard = placePiece(input.board, input.hand, center)
+  const regularBingos = rollout.averageBingos - rollout.averagePriorityBingos
+  const priorityScore = rollout.averagePriorityProgress * PRIORITY_BINGO_VALUE / BOARD_SIZE
+  const score = rollout.averageCoveredTiles * COVERAGE_VALUE +
+    regularBingos * REGULAR_BINGO_VALUE +
+    priorityScore -
+    rollout.averageGapCount * GAP_PENALTY
+
+  return {
+    ...candidate,
+    immediateScore: candidate.score,
+    immediatePriorityBingos: getPriorityBingoCount(immediateBoard) - getPriorityBingoCount(input.board),
+    immediatePriorityProgress: getPriorityLineProgress(immediateBoard) - getPriorityLineProgress(input.board),
+    expectedFutureScore: score,
+    score,
+    projectedCoverage: rollout.averageCoveredTiles,
+    projectedBingos: rollout.averageBingos,
+    projectedPriorityBingos: rollout.averagePriorityBingos,
+    projectedPriorityProgress: rollout.averagePriorityProgress,
+    projectedGapCount: rollout.averageGapCount,
+    recommendationScore: 0,
+    horizonDraws: Math.ceil(rollout.averageTurns),
+    sampleCount: searchSettings.samples,
+    projectedTurnsToStop: rollout.averageTurns,
+    skipReadyProbability: rollout.skipReadyProbability,
+    projectedReward: rollout.averageReward,
+    benchmark: rollout.benchmark,
+    explanation: `Projects ${rollout.averageCoveredTiles.toFixed(1)} covered tiles by the end of a simulated board.`,
+    futureExplanation: `Full-board simulation over ${searchSettings.samples} shared sequences using the ${input.strategy} continuation policy.`,
+  }
+}
+
 export const planFullBoard = (input: FullBoardPlannerInput): FullBoardPlannerResult => {
   const searchSettings = PLANNER_PATIENCE_LEVELS[input.patience]
   const seed = createScenarioSeed(input.board, normalizeRates(input.pieceRates))
