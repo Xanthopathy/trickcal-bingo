@@ -632,7 +632,7 @@ export const evaluateFullGamePlacements = (
         initialState,
       ),
     )
-    const final = games.map((game) => game.finalSnapshot)
+    const stopSnapshots = games.map((game) => game.skipSnapshot)
     const checkpointSnapshots = games.map((game) =>
       game.checkpoints.get(input.benchmarkTiles) ?? game.finalSnapshot,
     )
@@ -659,18 +659,18 @@ export const evaluateFullGamePlacements = (
           certificates: average(checkpointSnapshots.map((snapshot) => snapshot.reward.certificates)),
         },
       },
-      averageTurns: average(final.map((snapshot) => snapshot.turns)),
-      averageCoveredTiles: average(final.map((snapshot) => snapshot.coveredTiles)),
-      averageBingos: average(final.map((snapshot) => snapshot.bingos)),
-      averagePriorityBingos: average(final.map((snapshot) => snapshot.priorityBingos)),
-      averagePriorityProgress: average(final.map((snapshot) => snapshot.priorityProgress)),
-      averageGapCount: average(final.map((snapshot) => snapshot.trappedGaps)),
+      averageTurns: average(stopSnapshots.map((snapshot) => snapshot.turns)),
+      averageCoveredTiles: average(stopSnapshots.map((snapshot) => snapshot.coveredTiles)),
+      averageBingos: average(stopSnapshots.map((snapshot) => snapshot.bingos)),
+      averagePriorityBingos: average(stopSnapshots.map((snapshot) => snapshot.priorityBingos)),
+      averagePriorityProgress: average(stopSnapshots.map((snapshot) => snapshot.priorityProgress)),
+      averageGapCount: average(stopSnapshots.map((snapshot) => snapshot.trappedGaps)),
       averageReward: {
-        leaves: average(final.map((snapshot) => snapshot.reward.leaves)),
-        starCandy: average(final.map((snapshot) => snapshot.reward.starCandy)),
-        certificates: average(final.map((snapshot) => snapshot.reward.certificates)),
+        leaves: average(stopSnapshots.map((snapshot) => snapshot.reward.leaves)),
+        starCandy: average(stopSnapshots.map((snapshot) => snapshot.reward.starCandy)),
+        certificates: average(stopSnapshots.map((snapshot) => snapshot.reward.certificates)),
       },
-      skipReadyProbability: final.filter((snapshot) => snapshot.skipReady).length / samples,
+      skipReadyProbability: stopSnapshots.filter((snapshot) => snapshot.skipReady).length / samples,
     }
   })
 }

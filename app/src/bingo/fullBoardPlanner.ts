@@ -68,6 +68,35 @@ export type FullBoardCandidate = AdaptivePlacementCandidate & {
   projectedReward: BingoReward
 }
 
+const calculateRecommendationScore = (
+  candidate: FullBoardCandidate,
+  coveredBeforeMove: number,
+  benchmarkTiles: SimulationCheckpoint,
+): number => {
+  const fraction = (value: number, maximum: number) => Math.max(0, Math.min(value / maximum, 1))
+  const stopValue =
+    15 * fraction(candidate.projectedCoverage, BOARD_SIZE * BOARD_SIZE) +
+    10 * fraction(candidate.projectedBingos, BINGO_LINES.length) +
+    15 * fraction(candidate.projectedPriorityBingos, PRIORITY_LINES.length) +
+    10 * fraction(candidate.projectedPriorityProgress, PRIORITY_LINES.length * BOARD_SIZE) +
+    20 * candidate.skipReadyProbability +
+    10 * (1 - fraction(candidate.projectedTurnsToStop, 60)) +
+    10 * fraction(candidate.newCells, 9) -
+    5 * fraction(candidate.projectedGapCount, (BOARD_SIZE - 2) ** 2)
+  const benchmarkAhead = coveredBeforeMove < benchmarkTiles
+  const score = benchmarkAhead
+    ? stopValue +
+    3 * fraction(candidate.benchmark.averagePriorityBingos, PRIORITY_LINES.length) +
+    1.5 * fraction(candidate.benchmark.averageBingos, BINGO_LINES.length) +
+    1.5 * fraction(candidate.benchmark.averageCoveredTiles, BOARD_SIZE * BOARD_SIZE) +
+    candidate.benchmark.chanceAllCoinRewards +
+    candidate.benchmark.chanceCertificateReward +
+    2 * (1 - fraction(candidate.benchmark.averageTurnsToSkipReady, 60))
+    : stopValue * (100 / 90)
+
+  return Math.round(Math.max(0, Math.min(100, score)) * 1000) / 1000
+}
+
 export type FullBoardPlannerInput = {
   board: Board
   hand: PieceType
@@ -543,6 +572,7 @@ export const analyzeFullBoardPlacement = (
 export const planFullBoard = (input: FullBoardPlannerInput): FullBoardPlannerResult => {
   const searchSettings = PLANNER_PATIENCE_LEVELS[input.patience]
   const seed = createScenarioSeed(input.board, normalizeRates(input.pieceRates))
+  const coveredBeforeMove = getBoardSummary(input.board).coveredTiles
 
   const planPiece = (piece: PieceType): FullBoardCandidate[] => {
     const placements = getDistinctPlacements(input.board, piece, input.pieceRates)
@@ -630,7 +660,20 @@ export const planFullBoard = (input: FullBoardPlannerInput): FullBoardPlannerRes
       !evaluatedCandidates.some((other) => other !== candidate && dominates(other, candidate)),
     )
 
+    for (const candidate of evaluatedCandidates) {
+      candidate.recommendationScore = calculateRecommendationScore(
+        candidate,
+        coveredBeforeMove,
+        input.benchmarkTiles,
+      )
+    }
+
     const compareCandidates = (left: FullBoardCandidate, right: FullBoardCandidate) =>
+      right.recommendationScore - left.recommendationScore ||
+      right.projectedPriorityBingos - left.projectedPriorityBingos ||
+      right.projectedBingos - left.projectedBingos ||
+      right.projectedCoverage - left.projectedCoverage ||
+      left.projectedTurnsToStop - right.projectedTurnsToStop ||
       right.benchmark.averagePriorityBingos - left.benchmark.averagePriorityBingos ||
       right.benchmark.averageBingos - left.benchmark.averageBingos ||
       right.benchmark.averageCoveredTiles - left.benchmark.averageCoveredTiles ||

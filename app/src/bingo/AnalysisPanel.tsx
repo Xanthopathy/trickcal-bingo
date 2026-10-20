@@ -2,11 +2,11 @@ import type { Position } from '../game'
 import type { BingoSession } from './useBingoSession'
 import { MIN_MEANINGFUL_COVERAGE_DIFFERENCE, type FullBoardCandidate } from './fullBoardPlanner'
 import { PIECE_OPTIONS, positionLabel } from './constants'
-import { ADAPTIVE_STRATEGIES } from '../simulation/engine'
 
 type AnalysisPanelProps = Pick<
   BingoSession,
   | 'activePosition'
+  | 'coveredCount'
   | 'customPlacement'
   | 'customPlacementError'
   | 'isCustomPlacementThinking'
@@ -16,7 +16,6 @@ type AnalysisPanelProps = Pick<
   | 'isPlannerThinking'
   | 'pieceType'
   | 'plannerBenchmark'
-  | 'plannerStrategy'
   | 'plannerError'
   | 'recommendation'
   | 'recommendations'
@@ -43,6 +42,12 @@ const candidateComparison = (
   isTopPick: boolean,
 ) => {
   if (!comparison) return 'No comparison available.'
+
+  const valueDifference = candidate.recommendationScore - comparison.recommendationScore
+  if (Math.abs(valueDifference) >= 0.001) {
+    const direction = valueDifference > 0 ? '+' : ''
+    return `${direction}${valueDifference.toFixed(3)} move value vs ${isTopPick ? 'next best' : 'top pick'}`
+  }
 
   const deltas: string[] = []
   const priorityBingoDifference =
@@ -148,11 +153,11 @@ export function AnalysisPanel({ session }: { session: AnalysisPanelProps }) {
     customPlacement,
     customPlacementError,
     isCustomPlacementThinking,
+    coveredCount,
     commitPlacement,
     dismissedHoverPosition,
     pieceType,
     plannerBenchmark,
-    plannerStrategy,
     isPlannerThinking,
     plannerError,
     recommendation,
@@ -211,7 +216,7 @@ export function AnalysisPanel({ session }: { session: AnalysisPanelProps }) {
             <p className="section-kicker">FULL-BOARD ROLLOUTS</p>
             <h2>Recommended placement</h2>
           </div>
-          <span className="recommendation-tag">{isPlannerThinking ? 'SEARCHING' : `${plannerBenchmark} TILES`}</span>
+          <span className="recommendation-tag">{isPlannerThinking ? 'SEARCHING' : 'MOVE VALUE'}</span>
         </div>
 
         {isPlannerThinking ? (
@@ -224,7 +229,7 @@ export function AnalysisPanel({ session }: { session: AnalysisPanelProps }) {
               <button
                 className={`recommended-move ${samePosition(selectedPosition, recommendation.center) ? 'is-selected' : ''} ${samePosition(dismissedHoverPosition, recommendation.center) ? 'is-hover-dismissed' : ''}`}
                 type="button"
-                aria-label={`Select recommended placement ${positionLabel(recommendation.center)}, about ${recommendation.benchmark.averagePriorityBingos.toFixed(1)} priority bingos at ${recommendation.benchmark.tiles} tiles`}
+                aria-label={`Select recommended placement ${positionLabel(recommendation.center)}, move value ${recommendation.recommendationScore.toFixed(3)} out of 100`}
                 onMouseEnter={() => chooseForPreview(recommendation.center)}
                 onMouseLeave={clearPreview}
                 onFocus={() => chooseForPreview(recommendation.center)}
@@ -233,8 +238,8 @@ export function AnalysisPanel({ session }: { session: AnalysisPanelProps }) {
               >
                 <strong>{positionLabel(recommendation.center)}</strong>
                 <span className="move-score">
-                  <strong>~{recommendation.benchmark.averagePriorityBingos.toFixed(1)}</strong>
-                  <small>priority bingos</small>
+                  <strong>{recommendation.recommendationScore.toFixed(3)}</strong>
+                  <small>move value / 100</small>
                 </span>
               </button>
               <button
@@ -252,7 +257,7 @@ export function AnalysisPanel({ session }: { session: AnalysisPanelProps }) {
           <p className="empty-note">{pieceType ? 'No full-board plan is available for this position.' : 'Select a piece in hand to calculate a full-board plan.'}</p>
         )}
 
-        {recommendation && <p className="score-legend">{plannerBenchmark} tiles · {ADAPTIVE_STRATEGIES.find(({ id }) => id === plannerStrategy)?.name.replace('Adaptive: ', '') ?? 'selected strategy'}</p>}
+        {recommendation && <p className="score-legend">Blends stop outcomes and move cost · {plannerBenchmark}-tile checkpoint contributes until reached</p>}
 
         {recommendations.length > 1 && (
           <div className="alternatives">
@@ -270,7 +275,7 @@ export function AnalysisPanel({ session }: { session: AnalysisPanelProps }) {
                   onClick={() => toggleRecommendation(candidate.center)}
                 >
                   <span className="alternative-position">{positionLabel(candidate.center)}</span>
-                  <span className="alternative-rank">~{candidate.benchmark.averagePriorityBingos.toFixed(1)}</span>
+                  <span className="alternative-rank">{candidate.recommendationScore.toFixed(3)}</span>
                   <span className="alternative-summary">
                     {candidate.completedLines.length > 0
                       ? `Completes ${candidate.completedLines.length} bingo${candidate.completedLines.length === 1 ? '' : 's'}`
@@ -294,10 +299,14 @@ export function AnalysisPanel({ session }: { session: AnalysisPanelProps }) {
               <>
                 <p>{candidateComparison(activeCandidate, comparisonCandidate, activeIsTopPick)}</p>
                 <dl className="candidate-stats">
-                  <div><dt>{activeCandidate.benchmark.tiles} tiles</dt><dd>~{activeCandidate.benchmark.averagePriorityBingos.toFixed(1)} priority · {activeCandidate.benchmark.averageBingos.toFixed(1)} total</dd></div>
+                  <div><dt>At stop</dt><dd>~{activeCandidate.projectedCoverage.toFixed(1)} tiles · {activeCandidate.projectedPriorityBingos.toFixed(1)} priority · {activeCandidate.projectedBingos.toFixed(1)} total</dd></div>
                   <div><dt>Now</dt><dd>+{activeCandidate.newCells} {activeCandidate.newCells === 1 ? 'tile' : 'tiles'} · {immediateBingoText}</dd></div>
                   <div><dt>To stop</dt><dd>~{activeCandidate.projectedTurnsToStop.toFixed(1)} turns</dd></div>
-                  <div><dt>At {activeCandidate.benchmark.tiles} tiles</dt><dd>{Math.round(activeCandidate.benchmark.chanceAllCoinRewards * 100)}% all coins · {Math.round(activeCandidate.benchmark.chanceCertificateReward * 100)}% certificate</dd></div>
+                  {coveredCount < plannerBenchmark ? (
+                    <div><dt>At {plannerBenchmark} tiles</dt><dd>{Math.round(activeCandidate.benchmark.chanceAllCoinRewards * 100)}% all coins · {Math.round(activeCandidate.benchmark.chanceCertificateReward * 100)}% certificate</dd></div>
+                  ) : (
+                    <div><dt>Board shape</dt><dd>{activeCandidate.projectedPriorityProgress.toFixed(1)} core-line tiles · {activeCandidate.projectedGapCount.toFixed(1)} trapped gaps</dd></div>
+                  )}
                 </dl>
               </>
             ) : (
