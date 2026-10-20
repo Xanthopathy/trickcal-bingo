@@ -8,11 +8,14 @@ import {
   placePiece,
   rankPlacements,
   type AdaptivePlacementCandidate,
+  type BingoReward,
   type Board,
   type PieceRates,
   type PlacementCandidate,
   type PieceType,
+  type PriorityWeights,
 } from '../game'
+import { evaluateFullGamePlacements } from '../simulation/engine'
 
 const PIECE_TYPES = Object.keys(DEFAULT_PIECE_RATES) as PieceType[]
 const COVERAGE_VALUE = 100
@@ -33,25 +36,28 @@ export type PlannerSearchSettings = {
   samples: number
   beamWidth: number
   actionsPerPiece: number
-  estimatedTime: string
 }
 
 export const PLANNER_PATIENCE_LEVELS: Record<PlannerPatience, PlannerSearchSettings> = {
-  1: { label: 'Quick', futureTurns: 2, samples: 4, beamWidth: 1, actionsPerPiece: 1, estimatedTime: '<1 sec' },
-  2: { label: 'Balanced', futureTurns: 4, samples: 8, beamWidth: 2, actionsPerPiece: 2, estimatedTime: '5-10 sec' },
-  3: { label: 'Patient', futureTurns: 6, samples: 12, beamWidth: 2, actionsPerPiece: 2, estimatedTime: '10-20 sec' },
-  4: { label: 'Deep', futureTurns: 10, samples: 16, beamWidth: 2, actionsPerPiece: 2, estimatedTime: '25-45 sec' },
-  5: { label: 'Maximum', futureTurns: 14, samples: 24, beamWidth: 2, actionsPerPiece: 2, estimatedTime: '45-90 sec' },
+  1: { label: 'Quick', futureTurns: 2, samples: 4, beamWidth: 1, actionsPerPiece: 1 },
+  2: { label: 'Balanced', futureTurns: 4, samples: 8, beamWidth: 2, actionsPerPiece: 2 },
+  3: { label: 'Patient', futureTurns: 6, samples: 12, beamWidth: 2, actionsPerPiece: 2 },
+  4: { label: 'Deep', futureTurns: 10, samples: 16, beamWidth: 2, actionsPerPiece: 2 },
+  5: { label: 'Maximum', futureTurns: 14, samples: 24, beamWidth: 2, actionsPerPiece: 2 },
 }
 
 export type FullBoardCandidate = AdaptivePlacementCandidate & {
   projectedCoverage: number
   projectedBingos: number
+  projectedPriorityBingos: number
   projectedPriorityProgress: number
   projectedGapCount: number
   recommendationScore: number
   horizonDraws: number
   sampleCount: number
+  projectedTurnsToStop: number
+  skipReadyProbability: number
+  projectedReward: BingoReward
 }
 
 export type FullBoardPlannerInput = {
@@ -59,6 +65,8 @@ export type FullBoardPlannerInput = {
   hand: PieceType
   stored: PieceType | null
   pieceRates: PieceRates
+  priorityWeights?: PriorityWeights
+  skipThreshold: number
   patience: PlannerPatience
 }
 
@@ -386,10 +394,14 @@ const rankPiecePlans = (
   return rankedCandidates.map((candidate, index) => ({
     ...candidate,
     recommendationScore: Math.round((1 - index / rankDenominator) * 1000) / 10,
+    projectedPriorityBingos: 0,
+    projectedTurnsToStop: candidate.horizonDraws,
+    skipReadyProbability: 0,
+    projectedReward: { leaves: 0, starCandy: 0, certificates: 0 },
   }))
 }
 
-export const planFullBoard = (input: FullBoardPlannerInput): FullBoardPlannerResult => {
+export const planSampledLookahead = (input: FullBoardPlannerInput): FullBoardPlannerResult => {
   const pieceRates = normalizeRates(input.pieceRates)
   const searchSettings = PLANNER_PATIENCE_LEVELS[input.patience]
   const scenarios = createScenarios(input.board, pieceRates, searchSettings.samples, searchSettings.futureTurns)
@@ -414,6 +426,94 @@ export const planFullBoard = (input: FullBoardPlannerInput): FullBoardPlannerRes
       )
       : [],
     futureTurns: searchSettings.futureTurns,
+    scenarios: searchSettings.samples,
+  }
+}
+
+const getDistinctPlacements = (
+  board: Board,
+  piece: PieceType,
+  pieceRates: PieceRates,
+): PlacementCandidate[] => {
+  const ranked = rankPlacements(board, piece, pieceRates)
+  const hasUsefulPlacement = ranked.some((candidate) => candidate.newCells > 0)
+  const seenAddedTileSets = new Set<string>()
+
+  return ranked.filter((candidate) => {
+    if (hasUsefulPlacement && candidate.newCells === 0) return false
+    const addedTileSet = getPlacementDelta(board, piece, candidate.center).newCells
+      .map(({ row, col }) => row * BOARD_SIZE + col)
+      .sort((left, right) => left - right)
+      .join(',')
+    if (seenAddedTileSets.has(addedTileSet)) return false
+    seenAddedTileSets.add(addedTileSet)
+    return true
+  })
+}
+
+export const planFullBoard = (input: FullBoardPlannerInput): FullBoardPlannerResult => {
+  const searchSettings = PLANNER_PATIENCE_LEVELS[input.patience]
+  const seed = createScenarioSeed(input.board, normalizeRates(input.pieceRates))
+
+  const planPiece = (piece: PieceType): FullBoardCandidate[] => {
+    const placements = getDistinctPlacements(input.board, piece, input.pieceRates)
+    const rollouts = evaluateFullGamePlacements({
+      board: input.board,
+      hand: input.hand,
+      stored: input.stored,
+      rates: input.pieceRates,
+      priorities: input.priorityWeights,
+      skipThreshold: input.skipThreshold,
+      seed,
+      samples: searchSettings.samples,
+      candidates: placements.map(({ center }) => ({ piece, center })),
+    })
+    const placementByCenter = new Map(
+      placements.map((candidate) => [`${candidate.center.row}-${candidate.center.col}`, candidate]),
+    )
+
+    return rollouts.map((rollout) => {
+      const candidate = placementByCenter.get(`${rollout.center.row}-${rollout.center.col}`)!
+      const regularBingos = rollout.averageBingos - rollout.averagePriorityBingos
+      const priorityScore = rollout.averagePriorityProgress * PRIORITY_BINGO_VALUE / BOARD_SIZE
+      const score = rollout.averageCoveredTiles * COVERAGE_VALUE +
+        regularBingos * REGULAR_BINGO_VALUE +
+        priorityScore -
+        rollout.averageGapCount * GAP_PENALTY
+
+      return {
+        ...candidate,
+        immediateScore: candidate.score,
+        expectedFutureScore: score,
+        score,
+        projectedCoverage: rollout.averageCoveredTiles,
+        projectedBingos: rollout.averageBingos,
+        projectedPriorityBingos: rollout.averagePriorityBingos,
+        projectedPriorityProgress: rollout.averagePriorityProgress,
+        projectedGapCount: rollout.averageGapCount,
+        recommendationScore: 0,
+        horizonDraws: Math.ceil(rollout.averageTurns),
+        sampleCount: searchSettings.samples,
+        projectedTurnsToStop: rollout.averageTurns,
+        skipReadyProbability: rollout.skipReadyProbability,
+        projectedReward: rollout.averageReward,
+        explanation: `Projects ${rollout.averageCoveredTiles.toFixed(1)} covered tiles by the end of a simulated board.`,
+        futureExplanation: `Full-board simulation over ${searchSettings.samples} shared sequences using the adaptive-priority continuation policy.`,
+      }
+    }).sort((left, right) =>
+      right.score - left.score ||
+      right.projectedCoverage - left.projectedCoverage ||
+      right.projectedPriorityBingos - left.projectedPriorityBingos ||
+      right.projectedPriorityProgress - left.projectedPriorityProgress ||
+      left.center.row - right.center.row ||
+      left.center.col - right.center.col,
+    ).slice(0, 4)
+  }
+
+  return {
+    handRecommendations: planPiece(input.hand),
+    storedRecommendations: input.stored ? planPiece(input.stored) : [],
+    futureTurns: 60,
     scenarios: searchSettings.samples,
   }
 }

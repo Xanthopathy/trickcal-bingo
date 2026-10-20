@@ -74,8 +74,8 @@ function App() {
       )}
 
       <footer className="page-footer">
-        <span>{activePage === 'planner' ? 'Sampled lookahead planner · Prototype' : activePage === 'simulation' ? 'Shared-sequence strategy comparison · Prototype' : 'Piece frequency tracker · Local data'}</span>
-        <span>{activePage === 'planner' ? 'The planner’s draw horizon follows the patience setting; projections are estimates.' : activePage === 'simulation' ? 'Simulated results are estimates and depend on the configured piece rates.' : 'Rates are calculated from the recorded piece amounts.'}</span>
+        <span>{activePage === 'planner' ? 'Full-board rollout planner · Prototype' : activePage === 'simulation' ? 'Shared-sequence strategy comparison · Prototype' : 'Piece frequency tracker · Local data'}</span>
+        <span>{activePage === 'planner' ? 'Candidate moves are compared through simulated board outcomes.' : activePage === 'simulation' ? 'Simulated results are estimates and depend on the configured piece rates.' : 'Rates are calculated from the recorded piece amounts.'}</span>
       </footer>
     </main>
   )

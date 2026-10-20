@@ -8,10 +8,10 @@
   getBoardSummary,
   getPlacementDelta,
   placePiece,
-  rankAdaptivePlacements,
   rankPlacements,
   type BingoReward,
   type Board,
+  type PlacementDelta,
   type PieceRates,
   type PieceType,
   type Position,
@@ -22,7 +22,7 @@ export type SimulationStrategyId =
   | 'four-by-three'
   | 'adaptive-fill'
   | 'adaptive-priority'
-  | 'adaptive-lookahead'
+  | 'adaptive-hybrid'
 
 export const SIMULATION_STRATEGIES: {
   id: SimulationStrategyId
@@ -45,9 +45,9 @@ export const SIMULATION_STRATEGIES: {
       description: 'Uses line progress and the configured piece rates to favor valuable bingo lines.',
     },
     {
-      id: 'adaptive-lookahead',
-      name: 'Adaptive: one-draw lookahead',
-      description: 'Uses the current planner heuristic, including the stored piece and weighted next draw.',
+      id: 'adaptive-hybrid',
+      name: 'Adaptive: fill + core bingos',
+      description: 'Keeps within one tile of the best fill, then favors completing and advancing the four core bingos.',
     },
   ]
 
@@ -73,6 +73,22 @@ export type SimulationResult = {
   averageRewardAtThreshold: BingoReward
   averageBingosAtSkip: number
   averageRewardAtSkip: BingoReward
+  checkpoints: SimulationCheckpointStats[]
+}
+
+export const SIMULATION_CHECKPOINTS = [39, 44, 48] as const
+export type SimulationCheckpoint = typeof SIMULATION_CHECKPOINTS[number]
+
+export type SimulationCheckpointStats = {
+  tiles: SimulationCheckpoint
+  averageTurns: number
+  averageTurnsToSkipReady: number
+  averageBingos: number
+  averagePriorityBingos: number
+  averageCoinRewards: number
+  chanceAllCoinRewards: number
+  chanceCertificateReward: number
+  averageReward: BingoReward
 }
 
 export type SimulationComparison = {
@@ -104,6 +120,34 @@ export type SimulationReplay = {
   strategies: { strategy: SimulationStrategyId; moves: SimulationMove[] }[]
 }
 
+export type FullGameRolloutCandidate = {
+  piece: PieceType
+  center: Position
+}
+
+export type FullGameRolloutInput = {
+  board: Board
+  hand: PieceType
+  stored: PieceType | null
+  rates: PieceRates
+  priorities?: PriorityWeights
+  skipThreshold: number
+  seed: number
+  samples: number
+  candidates: FullGameRolloutCandidate[]
+}
+
+export type FullGameRolloutResult = FullGameRolloutCandidate & {
+  averageTurns: number
+  averageCoveredTiles: number
+  averageBingos: number
+  averagePriorityBingos: number
+  averagePriorityProgress: number
+  averageGapCount: number
+  averageReward: BingoReward
+  skipReadyProbability: number
+}
+
 type Random = () => number
 
 type TrialScenario = {
@@ -117,9 +161,27 @@ type GameSnapshot = {
   coveredTiles: number
   bingos: number
   priorityBingos: number
+  priorityProgress: number
+  trappedGaps: number
   coinRewards: number
   certificateReward: boolean
+  skipReady: boolean
   reward: BingoReward
+}
+
+type GameSimulation = {
+  thresholdSnapshot: GameSnapshot
+  skipSnapshot: GameSnapshot
+  finalSnapshot: GameSnapshot
+  checkpoints: Map<SimulationCheckpoint, GameSnapshot>
+  moves: SimulationMove[]
+}
+
+type InitialGameState = {
+  board: Board
+  hand: PieceType
+  stored: PieceType | null
+  firstMove: FullGameRolloutCandidate & { otherPiece: PieceType | null }
 }
 
 const PRIORITY_LINE_IDS = new Set([
@@ -128,6 +190,16 @@ const PRIORITY_LINE_IDS = new Set([
   'column-3',
   'row-3',
 ])
+
+type MoveChoice = {
+  piece: PieceType
+  otherPiece: PieceType | null
+  center: Position
+  delta: PlacementDelta
+  score: number
+  priorityProgress: number
+  priorityBingos: number
+}
 
 const PIECE_TYPES = Object.keys(DEFAULT_PIECE_RATES) as PieceType[]
 const QUADRANT_CENTERS: Position[] = [
@@ -263,6 +335,22 @@ const bestFourByThreePlacement = (
   return { ...fallback, score: fallback.delta.newCells.length }
 }
 
+const getPriorityProgressGain = (board: Board, nextBoard: Board): number =>
+  BINGO_LINES
+    .filter((line) => PRIORITY_LINE_IDS.has(line.id))
+    .reduce(
+      (total, line) => total + countLineCells(nextBoard, line) - countLineCells(board, line),
+      0,
+    )
+
+const getPriorityBingoGain = (board: Board, nextBoard: Board): number => {
+  const completedBefore = getBoardSummary(board).completedLines
+    .filter((line) => PRIORITY_LINE_IDS.has(line.id)).length
+  const completedAfter = getBoardSummary(nextBoard).completedLines
+    .filter((line) => PRIORITY_LINE_IDS.has(line.id)).length
+  return completedAfter - completedBefore
+}
+
 const chooseMove = (
   strategy: SimulationStrategyId,
   board: Board,
@@ -272,26 +360,30 @@ const chooseMove = (
   priorities: PriorityWeights,
 ) => {
   const availablePieces = stored ? [hand, stored] : [hand]
-  const options = availablePieces.map((piece, index) => {
+  const options: MoveChoice[] = availablePieces.flatMap((piece, index) => {
     const otherPiece = availablePieces[1 - index] ?? null
     if (strategy === 'four-by-three') {
-      return { piece, otherPiece, ...bestFourByThreePlacement(board, piece) }
+      const placement = bestFourByThreePlacement(board, piece)
+      return [{ piece, otherPiece, ...placement, priorityProgress: 0, priorityBingos: 0 }]
     }
     if (strategy === 'adaptive-fill') {
       const placement = placementWithMostNewTiles(board, piece)
-      return { piece, otherPiece, ...placement, score: placement.delta.newCells.length }
+      return [{ piece, otherPiece, ...placement, score: placement.delta.newCells.length, priorityProgress: 0, priorityBingos: 0 }]
     }
-    if (strategy === 'adaptive-lookahead') {
-      const candidate = rankAdaptivePlacements(board, piece, otherPiece, rates, priorities)[0]
-      return candidate
-        ? {
+    if (strategy === 'adaptive-hybrid') {
+      return rankPlacements(board, piece, rates, priorities).map((candidate) => {
+        const delta = getPlacementDelta(board, piece, candidate.center)
+        const nextBoard = placePiece(board, piece, candidate.center)
+        return {
           piece,
           otherPiece,
           center: candidate.center,
-          delta: getPlacementDelta(board, piece, candidate.center),
-          score: candidate.score,
+          delta,
+          score: 0,
+          priorityProgress: getPriorityProgressGain(board, nextBoard),
+          priorityBingos: getPriorityBingoGain(board, nextBoard),
         }
-        : null
+      })
     }
     const candidate = rankPlacements(board, piece, rates, priorities)[0]
     return candidate
@@ -301,13 +393,28 @@ const chooseMove = (
         center: candidate.center,
         delta: getPlacementDelta(board, piece, candidate.center),
         score: candidate.score,
+        priorityProgress: 0,
+        priorityBingos: 0,
       }
-      : null
-  }).filter((option): option is NonNullable<typeof option> => option !== null)
+      : []
+  })
+
+  if (strategy === 'adaptive-hybrid' && options.length > 0) {
+    const maxTileGain = Math.max(...options.map((option) => option.delta.newCells.length))
+    const coverageViable = options.filter(
+      (option) => option.delta.newCells.length >= maxTileGain - 1,
+    )
+    options.splice(0, options.length, ...coverageViable)
+  }
 
   options.sort(
-    (left, right) =>
-      right.score - left.score ||
+    (left, right) => strategy === 'adaptive-hybrid'
+      ? right.priorityBingos - left.priorityBingos ||
+      right.priorityProgress - left.priorityProgress ||
+      right.delta.newCells.length - left.delta.newCells.length ||
+      left.center.row - right.center.row ||
+      left.center.col - right.center.col
+      : right.score - left.score ||
       right.delta.newCells.length - left.delta.newCells.length ||
       left.center.row - right.center.row ||
       left.center.col - right.center.col,
@@ -320,15 +427,33 @@ const makeSnapshot = (
   turns: number,
   coinRewards: number,
   certificateReward: boolean,
+  skipThreshold: number,
 ): GameSnapshot => {
   const summary = getBoardSummary(board)
+  const priorityBingos = summary.completedLines.filter((line) => PRIORITY_LINE_IDS.has(line.id)).length
+  let trappedGaps = 0
+  for (let row = 1; row < BOARD_SIZE - 1; row += 1) {
+    for (let col = 1; col < BOARD_SIZE - 1; col += 1) {
+      if (
+        !board[row][col] &&
+        board[row - 1][col] && board[row + 1][col] &&
+        board[row][col - 1] && board[row][col + 1]
+      ) trappedGaps += 1
+    }
+  }
   return {
     turns,
     coveredTiles: summary.coveredTiles,
     bingos: summary.completedLines.length,
-    priorityBingos: summary.completedLines.filter((line) => PRIORITY_LINE_IDS.has(line.id)).length,
+    priorityBingos,
+    priorityProgress: BINGO_LINES
+      .filter((line) => PRIORITY_LINE_IDS.has(line.id))
+      .reduce((total, line) => total + countLineCells(board, line), 0),
+    trappedGaps,
     coinRewards,
     certificateReward,
+    skipReady: summary.coveredTiles >= skipThreshold &&
+      priorityBingos === 4 && coinRewards === 3 && certificateReward,
     reward: summary.reward,
   }
 }
@@ -346,20 +471,44 @@ const simulateGame = (
   priorities: PriorityWeights,
   skipThreshold: number,
   recordMoves = false,
-) => {
-  let board = createEmptyBoard()
-  let hand = scenario.draws[0]
-  let stored: PieceType | null = null
+  initialState?: InitialGameState,
+): GameSimulation => {
+  let board = initialState?.board ?? createEmptyBoard()
+  let hand = initialState?.hand ?? scenario.draws[0]
+  let stored: PieceType | null = initialState?.stored ?? null
   let turns = 0
-  let coinRewards = 0
-  let certificateReward = false
-  let thresholdSnapshot: GameSnapshot | null = null
+  const isCovered = (tileId: number) => Boolean(board[Math.floor(tileId / BOARD_SIZE)][tileId % BOARD_SIZE])
+  let coinRewards = initialState
+    ? [...scenario.coinTiles].filter(isCovered).length
+    : 0
+  let certificateReward = Boolean(initialState && isCovered(scenario.certificateTile))
+  const initialSnapshot = initialState
+    ? makeSnapshot(board, 0, coinRewards, certificateReward, skipThreshold)
+    : null
+  let thresholdSnapshot: GameSnapshot | null = initialSnapshot && initialSnapshot.coveredTiles >= skipThreshold
+    ? initialSnapshot
+    : null
+  let skipSnapshot: GameSnapshot | null = initialSnapshot?.skipReady ? initialSnapshot : null
+  const checkpointSnapshots = new Map<SimulationCheckpoint, GameSnapshot>()
+  for (const checkpoint of SIMULATION_CHECKPOINTS) {
+    if (initialSnapshot && initialSnapshot.coveredTiles >= checkpoint) {
+      checkpointSnapshots.set(checkpoint, initialSnapshot)
+    }
+  }
   let finalSnapshot: GameSnapshot | null = null
   const moves: SimulationMove[] = []
   const revealedRewards = new Map<number, 'coin' | 'certificate'>()
 
-  while (turns < scenario.draws.length) {
-    const move = chooseMove(strategy, board, hand, stored, rates, priorities)
+  while (turns < scenario.draws.length + Number(Boolean(initialState))) {
+    const move = initialState && turns === 0
+      ? {
+        piece: initialState.firstMove.piece,
+        otherPiece: initialState.firstMove.otherPiece,
+        center: initialState.firstMove.center,
+        delta: getPlacementDelta(board, initialState.firstMove.piece, initialState.firstMove.center),
+        score: 0,
+      }
+      : chooseMove(strategy, board, hand, stored, rates, priorities)
     if (!move) break
 
     const completedBefore = new Set(getBoardSummary(board).completedLines.map((line) => line.id))
@@ -383,7 +532,7 @@ const simulateGame = (
       }
     }
 
-    const snapshot = makeSnapshot(board, turns, coinRewards, certificateReward)
+    const snapshot = makeSnapshot(board, turns, coinRewards, certificateReward, skipThreshold)
     if (recordMoves) {
       const summary = getBoardSummary(board)
       moves.push({
@@ -411,25 +560,84 @@ const simulateGame = (
     if (thresholdSnapshot === null && snapshot.coveredTiles >= skipThreshold) {
       thresholdSnapshot = snapshot
     }
+    if (skipSnapshot === null && snapshot.skipReady) skipSnapshot = snapshot
+    for (const checkpoint of SIMULATION_CHECKPOINTS) {
+      if (!checkpointSnapshots.has(checkpoint) && snapshot.coveredTiles >= checkpoint) {
+        checkpointSnapshots.set(checkpoint, snapshot)
+      }
+    }
 
-    const skipReady =
-      snapshot.coveredTiles >= skipThreshold &&
-      snapshot.priorityBingos === 4 &&
-      snapshot.coinRewards === 3 &&
-      snapshot.certificateReward
-
-    if (skipReady || snapshot.coveredTiles === BOARD_SIZE * BOARD_SIZE) {
+    if (snapshot.coveredTiles === BOARD_SIZE * BOARD_SIZE) {
       finalSnapshot = snapshot
       break
     }
 
     stored = move.otherPiece
-    hand = scenario.draws[turns]
+    const nextDrawIndex = turns - Number(Boolean(initialState))
+    if (nextDrawIndex >= scenario.draws.length) break
+    hand = scenario.draws[nextDrawIndex]
   }
 
-  finalSnapshot ??= makeSnapshot(board, turns, coinRewards, certificateReward)
-  thresholdSnapshot ??= finalSnapshot
-  return { thresholdSnapshot, finalSnapshot, moves }
+  finalSnapshot ??= makeSnapshot(board, turns, coinRewards, certificateReward, skipThreshold)
+  thresholdSnapshot ??= initialSnapshot ?? finalSnapshot
+  skipSnapshot ??= finalSnapshot
+  for (const checkpoint of SIMULATION_CHECKPOINTS) {
+    if (!checkpointSnapshots.has(checkpoint)) checkpointSnapshots.set(checkpoint, finalSnapshot)
+  }
+  return { thresholdSnapshot, skipSnapshot, finalSnapshot, checkpoints: checkpointSnapshots, moves }
+}
+
+export const evaluateFullGamePlacements = (
+  input: FullGameRolloutInput,
+): FullGameRolloutResult[] => {
+  const rates = normalizeRates(input.rates)
+  const priorities = input.priorities ?? DEFAULT_PRIORITY_WEIGHTS
+  const samples = Math.max(1, Math.min(1000, Math.floor(input.samples)))
+  const scenarios = Array.from({ length: samples }, (_, index) =>
+    makeScenario(input.seed, index, rates),
+  )
+
+  return input.candidates.map((candidate) => {
+    const placedStoredPiece = candidate.piece !== input.hand
+    const initialState: InitialGameState = {
+      board: input.board,
+      hand: input.hand,
+      stored: input.stored,
+      firstMove: {
+        ...candidate,
+        otherPiece: placedStoredPiece ? input.hand : input.stored,
+      },
+    }
+    const games = scenarios.map((scenario) =>
+      simulateGame(
+        'adaptive-priority',
+        scenario,
+        rates,
+        priorities,
+        input.skipThreshold,
+        false,
+        initialState,
+      ),
+    )
+    const final = games.map((game) => game.finalSnapshot)
+    const average = (values: number[]) => values.reduce((total, value) => total + value, 0) / samples
+
+    return {
+      ...candidate,
+      averageTurns: average(final.map((snapshot) => snapshot.turns)),
+      averageCoveredTiles: average(final.map((snapshot) => snapshot.coveredTiles)),
+      averageBingos: average(final.map((snapshot) => snapshot.bingos)),
+      averagePriorityBingos: average(final.map((snapshot) => snapshot.priorityBingos)),
+      averagePriorityProgress: average(final.map((snapshot) => snapshot.priorityProgress)),
+      averageGapCount: average(final.map((snapshot) => snapshot.trappedGaps)),
+      averageReward: {
+        leaves: average(final.map((snapshot) => snapshot.reward.leaves)),
+        starCandy: average(final.map((snapshot) => snapshot.reward.starCandy)),
+        certificates: average(final.map((snapshot) => snapshot.reward.certificates)),
+      },
+      skipReadyProbability: final.filter((snapshot) => snapshot.skipReady).length / samples,
+    }
+  })
 }
 
 export const runSimulationReplay = (
@@ -476,13 +684,33 @@ export const runSimulationComparison = (input: SimulationInput): SimulationCompa
       simulateGame(strategy, scenario, rates, priorities, input.skipThreshold),
     )
     const atThreshold = games.map((game) => game.thresholdSnapshot)
-    const atSkip = games.map((game) => game.finalSnapshot)
+    const atSkip = games.map((game) => game.skipSnapshot)
+    const checkpoints = SIMULATION_CHECKPOINTS.map((tiles): SimulationCheckpointStats => {
+      const snapshots = games.map((game) => game.checkpoints.get(tiles) ?? game.finalSnapshot)
+      return {
+        tiles,
+        averageTurns: average(snapshots.map((snapshot) => snapshot.turns)),
+        averageTurnsToSkipReady: average(snapshots.map((snapshot, index) =>
+          Math.max(0, atSkip[index].turns - snapshot.turns),
+        )),
+        averageBingos: average(snapshots.map((snapshot) => snapshot.bingos)),
+        averagePriorityBingos: average(snapshots.map((snapshot) => snapshot.priorityBingos)),
+        averageCoinRewards: average(snapshots.map((snapshot) => snapshot.coinRewards)),
+        chanceAllCoinRewards: snapshots.filter((snapshot) => snapshot.coinRewards === 3).length / trials,
+        chanceCertificateReward: snapshots.filter((snapshot) => snapshot.certificateReward).length / trials,
+        averageReward: {
+          leaves: average(snapshots.map((snapshot) => snapshot.reward.leaves)),
+          starCandy: average(snapshots.map((snapshot) => snapshot.reward.starCandy)),
+          certificates: average(snapshots.map((snapshot) => snapshot.reward.certificates)),
+        },
+      }
+    })
 
     return {
       strategy,
       trials,
       averageTurnsToThreshold: average(atThreshold.map((game) => game.turns)),
-      averageTurnsAfterThreshold: average(games.map((game) => Math.max(0, game.finalSnapshot.turns - game.thresholdSnapshot.turns))),
+      averageTurnsAfterThreshold: average(games.map((game) => Math.max(0, game.skipSnapshot.turns - game.thresholdSnapshot.turns))),
       averageBingosAtThreshold: average(atThreshold.map((game) => game.bingos)),
       averagePriorityBingosAtThreshold: average(atThreshold.map((game) => game.priorityBingos)),
       averageCoinRewardsAtThreshold: average(atThreshold.map((game) => game.coinRewards)),
@@ -498,6 +726,7 @@ export const runSimulationComparison = (input: SimulationInput): SimulationCompa
         (total, game) => addRewards(total, game.reward),
         { leaves: 0, starCandy: 0, certificates: 0 },
       ),
+      checkpoints,
     }
   })
 

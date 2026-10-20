@@ -2,8 +2,10 @@
 import { BOARD_SIZE, createEmptyBoard, type PieceRates, type PriorityWeights, type Position } from '../game'
 import {
   runSimulationReplay,
+  SIMULATION_CHECKPOINTS,
   SIMULATION_STRATEGIES,
   type SimulationComparison,
+  type SimulationCheckpoint,
   type SimulationInput,
   type SimulationMove,
   type SimulationReplay,
@@ -20,9 +22,15 @@ const INITIAL_STRATEGIES: SimulationStrategyId[] = [
   'four-by-three',
   'adaptive-fill',
   'adaptive-priority',
+  'adaptive-hybrid',
 ]
 
 const formatAverage = (value: number, digits = 1) => value.toFixed(digits)
+const generateRandomSeed = () => {
+  const value = new Uint32Array(1)
+  window.crypto.getRandomValues(value)
+  return value[0]
+}
 const containsCell = (cells: Position[], row: number, col: number) =>
   cells.some((cell) => cell.row === row && cell.col === col)
 
@@ -67,8 +75,9 @@ export function SimulationPage({
 }: SimulationPageProps) {
   const [selectedStrategies, setSelectedStrategies] = useState(INITIAL_STRATEGIES)
   const [trialCount, setTrialCount] = useState('100')
-  const [seedValue, setSeedValue] = useState('20261007')
+  const [seedValue, setSeedValue] = useState('')
   const [comparison, setComparison] = useState<SimulationComparison | null>(null)
+  const [selectedCheckpoint, setSelectedCheckpoint] = useState<SimulationCheckpoint>(39)
   const [isRunning, setIsRunning] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [activeView, setActiveView] = useState<'statistics' | 'replay'>('statistics')
@@ -97,10 +106,12 @@ export function SimulationPage({
 
   const runComparison = () => {
     if (selectedStrategies.length === 0 || isRunning) return
+    const enteredSeed = seedValue.trim()
+    const parsedSeed = Number(enteredSeed)
     const input: SimulationInput = {
       strategies: selectedStrategies,
       trials: Math.max(1, Math.min(1000, Math.floor(Number(trialCount) || 1))),
-      seed: Number.isFinite(Number(seedValue)) ? Math.floor(Number(seedValue)) : 1,
+      seed: enteredSeed && Number.isSafeInteger(parsedSeed) ? parsedSeed : generateRandomSeed(),
       skipThreshold,
       pieceRates,
       priorityWeights,
@@ -165,7 +176,7 @@ export function SimulationPage({
         <div>
           <p className="eyebrow">STRATEGY TESTING</p>
           <h1 id="simulation-title">Simulation lab</h1>
-          <p>Compare strategies on the same seeded piece draws and hidden reward locations.</p>
+          <p>Compare strategies on identical piece draws and hidden reward locations. Each trial is a new board.</p>
         </div>
         <div className="simulation-stop-rule">
           <span>Run ends when skip advice is ready</span>
@@ -189,13 +200,16 @@ export function SimulationPage({
             />
           </label>
           <label className="simulation-field">
-            <span>Random seed</span>
+            <span>Random seed (optional)</span>
             <input
               type="number"
+              min="0"
               step="1"
+              placeholder="Random each run"
               value={seedValue}
               onChange={(event) => setSeedValue(event.currentTarget.value)}
             />
+            <small>Blank = random; seed appears in results.</small>
           </label>
           <div className="simulation-rates" aria-label="Piece distribution used">
             <span>Piece rates</span>
@@ -228,7 +242,7 @@ export function SimulationPage({
         </fieldset>
 
         <div className="simulation-run-row">
-          <p>Each strategy gets the same piece draws and the same shuffled reward tiles in each trial.</p>
+          <p>Within each trial, all selected strategies get identical piece draws and reward-tile locations.</p>
           <button
             className="primary-button simulation-run-button"
             type="button"
@@ -257,28 +271,47 @@ export function SimulationPage({
             </div>
             <span>Seed {comparison.seed} · stop threshold {comparison.skipThreshold}</span>
           </div>
+          <div className="checkpoint-selector">
+            <span>Compare at covered tiles</span>
+            <div className="checkpoint-buttons" role="group" aria-label="Coverage checkpoint">
+              {SIMULATION_CHECKPOINTS.map((checkpoint) => (
+                <button
+                  className={selectedCheckpoint === checkpoint ? 'is-active' : ''}
+                  type="button"
+                  key={checkpoint}
+                  aria-pressed={selectedCheckpoint === checkpoint}
+                  onClick={() => setSelectedCheckpoint(checkpoint)}
+                >
+                  {checkpoint}
+                </button>
+              ))}
+            </div>
+            <small>Metrics use the first board state at or above the selected coverage.</small>
+          </div>
           <div className="simulation-result-grid">
             {comparison.results.map((result) => {
               const strategy = SIMULATION_STRATEGIES.find((item) => item.id === result.strategy)!
+              const checkpoint = result.checkpoints.find(({ tiles }) => tiles === selectedCheckpoint)!
               return (
                 <article className="simulation-result" key={result.strategy}>
                   <h3>{strategy.name}</h3>
                   <dl className="simulation-metrics">
-                    <div><dt>Turns to cover threshold</dt><dd>{formatAverage(result.averageTurnsToThreshold)}</dd></div>
-                    <div><dt>Extra turns to skip readiness</dt><dd>{formatAverage(result.averageTurnsAfterThreshold)}</dd></div>
-                    <div><dt>Bingos at threshold</dt><dd>{formatAverage(result.averageBingosAtThreshold)}</dd></div>
-                    <div><dt>Priority bingos at threshold</dt><dd>{formatAverage(result.averagePriorityBingosAtThreshold)} / 4</dd></div>
-                    <div><dt>100K-coin rewards found at threshold</dt><dd>{formatAverage(result.averageCoinRewardsAtThreshold)} / 3</dd></div>
-                    <div><dt>All three coins found at threshold</dt><dd>{Math.round(result.chanceAllCoinRewardsAtThreshold * 100)}%</dd></div>
-                    <div><dt>10-certificate tile found at threshold</dt><dd>{Math.round(result.chanceCertificateRewardAtThreshold * 100)}%</dd></div>
+                    <div><dt>Turns to {selectedCheckpoint} tiles</dt><dd>{formatAverage(checkpoint.averageTurns)}</dd></div>
+                    <div><dt>Turns from checkpoint to skip readiness</dt><dd>{formatAverage(checkpoint.averageTurnsToSkipReady)}</dd></div>
+                    <div><dt>Bingos at {selectedCheckpoint} tiles</dt><dd>{formatAverage(checkpoint.averageBingos)}</dd></div>
+                    <div><dt>Priority bingos at {selectedCheckpoint}</dt><dd>{formatAverage(checkpoint.averagePriorityBingos)} / 4</dd></div>
+                    <div><dt>100K-coin rewards at {selectedCheckpoint}</dt><dd>{formatAverage(checkpoint.averageCoinRewards)} / 3</dd></div>
+                    <div><dt>All three coins found</dt><dd>{Math.round(checkpoint.chanceAllCoinRewards * 100)}%</dd></div>
+                    <div><dt>10-certificate tile found</dt><dd>{Math.round(checkpoint.chanceCertificateReward * 100)}%</dd></div>
                     <div><dt>Bingos at skip readiness</dt><dd>{formatAverage(result.averageBingosAtSkip)}</dd></div>
                   </dl>
-                  <div className="simulation-reward-row" aria-label="Bingo reward totals at skip readiness">
-                    <span><strong>{formatAverage(result.averageRewardAtSkip.leaves)}</strong> LVs</span>
-                    <span><strong>{formatAverage(result.averageRewardAtSkip.starCandy)}</strong> SC</span>
-                    <span><strong>{formatAverage(result.averageRewardAtSkip.certificates)}</strong> CRTs</span>
+                  <div className="simulation-reward-row" aria-label={`Bingo reward totals at ${selectedCheckpoint} tiles`}>
+                    <span><strong>{formatAverage(checkpoint.averageReward.leaves)}</strong> LVs</span>
+                    <span><strong>{formatAverage(checkpoint.averageReward.starCandy)}</strong> SC</span>
+                    <span><strong>{formatAverage(checkpoint.averageReward.certificates)}</strong> CRTs</span>
                   </div>
-                  <p className="simulation-caption">Average bingo rewards at skip readiness; resource types stay separate.</p>
+                  <p className="simulation-caption">Average bingo rewards at {selectedCheckpoint} tiles; resource types stay separate.</p>
+                  <p className="simulation-skip-caption">At skip readiness: {formatAverage(result.averageRewardAtSkip.leaves)} LVs · {formatAverage(result.averageRewardAtSkip.starCandy)} SC · {formatAverage(result.averageRewardAtSkip.certificates)} CRTs</p>
                 </article>
               )
             })}

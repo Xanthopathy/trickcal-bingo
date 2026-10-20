@@ -43,29 +43,29 @@ const candidateComparison = (
   const comparisonName = isTopPick ? 'the next-best move' : 'the top recommendation'
   if (Math.abs(coverageDifference) >= MIN_MEANINGFUL_COVERAGE_DIFFERENCE) {
     const direction = coverageDifference > 0 ? 'more' : 'fewer'
-    return `After ${candidate.horizonDraws} future draws, this projects ${Math.abs(coverageDifference).toFixed(1)} ${direction} covered tiles than ${comparisonName}.`
+    return `At the simulated board stop, this projects ${Math.abs(coverageDifference).toFixed(1)} ${direction} covered tiles than ${comparisonName}.`
   }
 
   const bingoDifference = candidate.projectedBingos - comparison.projectedBingos
   if (Math.abs(bingoDifference) >= 0.5) {
     const direction = bingoDifference > 0 ? 'more' : 'fewer'
-    return `Projected tile coverage is effectively tied; this projects ${Math.abs(bingoDifference).toFixed(1)} ${direction} completed bingos than ${comparisonName}.`
+    return `Projected coverage is close; this projects ${Math.abs(bingoDifference).toFixed(1)} ${direction} completed bingos than ${comparisonName} at the simulated stop.`
   }
 
   const priorityProgressDifference =
     candidate.projectedPriorityProgress - comparison.projectedPriorityProgress
   if (Math.abs(priorityProgressDifference) >= 0.5) {
     const direction = priorityProgressDifference > 0 ? 'more' : 'less'
-    return `Coverage and bingo projections are close; this advances the diagonals, Row 4, and Column D by ${Math.abs(priorityProgressDifference).toFixed(1)} ${direction} line cells than ${comparisonName}.`
+    return `Coverage and bingo projections are close; this leaves ${Math.abs(priorityProgressDifference).toFixed(1)} ${direction} filled cells across the diagonals, Row 4, and Column D than ${comparisonName} at the simulated stop.`
   }
 
   const gapDifference = candidate.projectedGapCount - comparison.projectedGapCount
   if (Math.abs(gapDifference) >= 1) {
     const direction = gapDifference < 0 ? 'fewer' : 'more'
-    return `Projected coverage is effectively tied; this leaves ${Math.abs(gapDifference).toFixed(1)} ${direction} enclosed empty gaps than ${comparisonName}.`
+    return `Projected coverage is close; this leaves ${Math.abs(gapDifference).toFixed(1)} ${direction} enclosed empty gaps than ${comparisonName} at the simulated stop.`
   }
 
-  return `These moves are too close to distinguish in ${candidate.sampleCount} sampled sequences. Treat them as alternatives, not a proven ranking.`
+  return `These moves are too close to distinguish in ${candidate.sampleCount} full-board rollouts. Treat them as alternatives, not a proven ranking.`
 }
 
 export function AnalysisPanel({ session }: { session: AnalysisPanelProps }) {
@@ -126,14 +126,14 @@ export function AnalysisPanel({ session }: { session: AnalysisPanelProps }) {
       <section className="recommendation-section" aria-live="polite">
         <div className="panel-heading recommendation-heading">
           <div>
-            <p className="section-kicker">SAMPLED LOOKAHEAD</p>
+            <p className="section-kicker">FULL-BOARD ROLLOUTS</p>
             <h2>Recommended placement</h2>
           </div>
           <span className="recommendation-tag">{isPlannerThinking ? 'SEARCHING' : 'COVERAGE FIRST'}</span>
         </div>
 
         {isPlannerThinking ? (
-          <p className="empty-note">Searching sampled future draws for a strong coverage move…</p>
+          <p className="empty-note">Simulating complete boards from each candidate move…</p>
         ) : plannerError ? (
           <p className="empty-note" role="alert">{plannerError}</p>
         ) : recommendation && pieceType ? (
@@ -150,14 +150,14 @@ export function AnalysisPanel({ session }: { session: AnalysisPanelProps }) {
             >
               <strong>{positionLabel(recommendation.center)}</strong>
               <p>Top projected board fill</p>
-              <span className="move-score">Rank {recommendation.recommendationScore.toFixed(1)}</span>
+              <span className="move-score">~{recommendation.projectedCoverage.toFixed(1)} tiles at stop</span>
             </button>
           </>
         ) : (
           <p className="empty-note">{pieceType ? 'No full-board plan is available for this position.' : 'Select a piece in hand to calculate a full-board plan.'}</p>
         )}
 
-        {recommendation && <p className="score-legend">Rank scores order this shortlist by rollout score, then projected coverage and tile gain. Each position gets a distinct value; gaps are not proportional measures of advantage.</p>}
+        {recommendation && <p className="score-legend">Each move is evaluated through simulated board stop using adaptive-priority play afterward. Reward types stay separate; projections are estimates, not guarantees.</p>}
 
         {recommendations.length > 1 && (
           <div className="alternatives">
@@ -174,7 +174,7 @@ export function AnalysisPanel({ session }: { session: AnalysisPanelProps }) {
                   onBlur={clearPreview}
                   onClick={() => toggleRecommendation(candidate.center)}
                 >
-                  <span className="alternative-rank">0{index + 2} · {candidate.recommendationScore.toFixed(1)}</span>
+                  <span className="alternative-rank">0{index + 2} · ~{candidate.projectedCoverage.toFixed(1)} tiles</span>
                   <span className="alternative-position">{positionLabel(candidate.center)}</span>
                   <span className="alternative-summary">
                     {candidate.completedLines.length > 0
@@ -198,8 +198,9 @@ export function AnalysisPanel({ session }: { session: AnalysisPanelProps }) {
             {activeCandidate ? (
               <>
                 <p>{candidateComparison(activeCandidate, comparisonCandidate, selectedCandidateIndex === 0)}</p>
-                <p>{`Covers ${activeCandidate.newCells} previously empty ${activeCandidate.newCells === 1 ? 'tile' : 'tiles'} now. ${immediateBingoText} The search projects ${activeCandidate.projectedPriorityProgress.toFixed(1)} filled cells across the diagonals, Row 4, and Column D.`}</p>
-                <small>Estimate from {activeCandidate.sampleCount} shared draw samples over the next {activeCandidate.horizonDraws} draws.</small>
+                <p>{`Covers ${activeCandidate.newCells} previously empty ${activeCandidate.newCells === 1 ? 'tile' : 'tiles'} now. ${immediateBingoText} The rollout projects ${activeCandidate.projectedPriorityBingos.toFixed(1)} of 4 priority bingos and ${activeCandidate.projectedPriorityProgress.toFixed(1)} filled cells across those lines at the simulated stop.`}</p>
+                <p>{`Estimated skip-ready in ${(activeCandidate.skipReadyProbability * 100).toFixed(0)}% of rollouts. Average rewards per board: ${activeCandidate.projectedReward.leaves.toFixed(1)} LVs, ${activeCandidate.projectedReward.starCandy.toFixed(1)} SC, ${activeCandidate.projectedReward.certificates.toFixed(1)} CRTs.`}</p>
+                <small>{activeCandidate.sampleCount} shared full-board rollouts · about {activeCandidate.projectedTurnsToStop.toFixed(1)} placements to stop.</small>
               </>
             ) : (
               <p>Sampled comparisons are available for the recommended move and alternatives listed above.</p>
@@ -221,10 +222,10 @@ export function AnalysisPanel({ session }: { session: AnalysisPanelProps }) {
             ? pieceType === slotPieceType
               ? `Both available pieces are ${pieceName(pieceType)}; swapping will not change the move options.`
               : Math.abs(storedCoverageDifference) < MIN_MEANINGFUL_COVERAGE_DIFFERENCE
-                ? `No clear coverage reason to swap ${pieceName(pieceType)} for ${pieceName(slotPieceType)}; their estimates are too close to distinguish over ${recommendation.horizonDraws} draws.`
+                ? `No clear coverage reason to swap ${pieceName(pieceType)} for ${pieceName(slotPieceType)}; their full-board coverage estimates are too close to distinguish.`
                 : shouldSwapForHigherCoverage
-                  ? `Swap to stored ${pieceName(slotPieceType)}: projects ${storedCoverageDifference.toFixed(1)} more covered tiles over the next ${recommendation.horizonDraws} draws.`
-                  : `Keep ${pieceName(pieceType)} in hand: projects ${Math.abs(storedCoverageDifference).toFixed(1)} more covered tiles than ${pieceName(slotPieceType)} over the next ${recommendation.horizonDraws} draws.`
+                  ? `Swap to stored ${pieceName(slotPieceType)}: projects ${storedCoverageDifference.toFixed(1)} more covered tiles at the simulated stop.`
+                  : `Keep ${pieceName(pieceType)} in hand: projects ${Math.abs(storedCoverageDifference).toFixed(1)} more covered tiles than ${pieceName(slotPieceType)} at the simulated stop.`
             : 'Add a piece to storage to compare full-board plans for both available pieces.'}
         </div>
       </section>

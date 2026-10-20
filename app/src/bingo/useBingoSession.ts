@@ -196,7 +196,7 @@ export function useBingoSession() {
   } | null>(null)
   const boardGridRef = useRef<HTMLDivElement>(null)
   const plannerWorkerRef = useRef<Worker | null>(null)
-  const plannerKey = JSON.stringify({ board, pieceType, slotPieceType, pieceRates, plannerPatience })
+  const plannerKey = JSON.stringify({ board, pieceType, slotPieceType, pieceRates, priorityWeights, skipThreshold, plannerPatience })
 
   const recordPlacement = useCallback((placedPieceType: PieceType) => {
     setHistory((previous) => [...previous, {
@@ -250,12 +250,12 @@ export function useBingoSession() {
       worker.terminate()
       plannerWorkerRef.current = null
     }
-    worker.postMessage({ board, hand: pieceType, stored: slotPieceType, pieceRates, patience: plannerPatience })
+    worker.postMessage({ board, hand: pieceType, stored: slotPieceType, pieceRates, priorityWeights, skipThreshold, patience: plannerPatience })
     return () => {
       worker.terminate()
       if (plannerWorkerRef.current === worker) plannerWorkerRef.current = null
     }
-  }, [board, pieceType, slotPieceType, pieceRates, plannerPatience, plannerKey])
+  }, [board, pieceType, slotPieceType, pieceRates, priorityWeights, skipThreshold, plannerPatience, plannerKey])
 
   const plannerResultIsCurrent = plannerResult?.key === plannerKey
   const recommendations = useMemo<FullBoardCandidate[]>(

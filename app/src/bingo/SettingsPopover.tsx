@@ -94,7 +94,7 @@ export function SettingsPopover({ session }: { session: SettingsPopoverProps }) 
               <h3>Planner patience</h3>
               <span>{PLANNER_PATIENCE_LEVELS[plannerPatience].label}</span>
             </div>
-            <p>More patience searches more draws and samples, but takes longer.</p>
+            <p>Each rollout continues until the board is skip-ready or full. More samples make estimates steadier.</p>
             <label className="planner-patience-control">
               <input
                 type="range"
@@ -105,12 +105,12 @@ export function SettingsPopover({ session }: { session: SettingsPopoverProps }) 
                 aria-label="Planner patience"
                 onChange={(event) => setPlannerPatience(Number(event.currentTarget.value) as PlannerPatience)}
               />
-              <span className="planner-patience-scale"><span>Faster</span><span>Deeper</span></span>
+              <span className="planner-patience-scale"><span>Fewer samples</span><span>More samples</span></span>
               <small>
-                {PLANNER_PATIENCE_LEVELS[plannerPatience].samples} samples · up to {PLANNER_PATIENCE_LEVELS[plannerPatience].futureTurns} future draws · about {PLANNER_PATIENCE_LEVELS[plannerPatience].estimatedTime}
+                {PLANNER_PATIENCE_LEVELS[plannerPatience].samples} full-board rollouts · up to 60 future draws each
               </small>
             </label>
-            <p>Runtime is a rough estimate; device and board state can change it significantly.</p>
+            <p>Runtime varies with board state and device speed.</p>
           </div>
 
           <div className="settings-group">

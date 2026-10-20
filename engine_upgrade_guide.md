@@ -4,24 +4,24 @@ A plain-language guide to what the engine does today and how to improve it witho
 
 ## The Short Version
 
-The planner uses a **bounded sampled lookahead**. For every possible current placement, it explores likely future piece draws, legal placements, and hand/storage choices, then compares the board at a configurable short horizon.
+The live planner evaluates each legal first placement with **complete-board rollouts**. It forces that move, then uses the Simulation Lab's adaptive-priority policy for later moves, sharing the same board transitions, hand/storage swaps, draws, hidden reward locations, and stop conditions.
 
-Settings offer five patience levels. They range from two future draws and four samples to fourteen future draws and twenty-four samples; the default Balanced level uses four draws and eight samples. The Maximum setting is estimated at roughly 45–90 seconds, depending on device and board. Projected tile coverage at that horizon is primary, with bingo count and enclosed empty gaps breaking close ties. No level guarantees a complete-game simulation, and none is an exhaustive solver or a real-world probability guarantee.
+Settings offer five sample counts, from 4 to 24 complete-board rollouts; Balanced uses 8. Each scenario can draw up to 60 future pieces and stops when the board is skip-ready or full. More samples reduce sampling noise but do not make the continuation policy optimal. This is not an exhaustive solver or a real-world probability guarantee.
 
 The planner recommends one move at a time and replans after the board, hand, storage, or estimated piece rates change. The offline simulator remains separate and compares baseline strategies on identical seeded games.
 
 ## What the Engine Does Today
 
-The main logic is in `app/src/game.ts`.
+The shared game loop is in `app/src/simulation/engine.ts`; candidate generation and rollout aggregation are in `app/src/bingo/fullBoardPlanner.ts`.
 
 For each possible placement, the engine roughly asks:
 
-- How much of the board can likely be covered after future draws?
-- Can the current and stored pieces be used in a useful order?
+- How much of the board is covered at the simulated stopping point?
+- How often do the priority lines and skip-ready conditions complete?
+- What are the separate expected bingo rewards at that stopping point?
 - Does a move leave enclosed empty cells or awkward regions?
-- How many bingos are likely, after coverage has been considered?
 
-The patience setting controls the number of repeatable draw sequences, search horizon, and beam width. The planner ranks projected coverage at that horizon first, then bingo count and trapped-gap risk. The displayed comparisons describe those sampled searches; they are not guarantees or validated estimates over all possible games.
+Every candidate sees the same seeded draw sequences and hidden reward locations. Future moves follow the adaptive-priority strategy; only the first move is varied. The planner ranks the resulting expected board outcomes, so its quality still depends on that continuation policy and configured piece rates.
 
 When a piece is in storage, every simulated turn can use either the new draw or the stored piece, placing the unused piece into storage. Both the hand and storage-piece plans are compared for swap advice.
 
@@ -32,7 +32,7 @@ There are two different kinds of numbers, and they do different jobs:
 - **Piece rates** are estimates of how often each type of piece appears. They help adjust how achievable rows, columns, and diagonals seem.
 - **Piece affinity** is a score multiplier for shapes that naturally help certain line types. For example, `1.35` means a Cross gets 35% extra line-progress score for a diagonal. It does **not** mean a 35% chance of drawing a Cross or completing a bingo.
 
-Piece rates affect the planner's future draws. The adjustable heuristic priorities are used only by Simulation strategies; the live planner ignores them and counts bingos equally as a secondary criterion.
+Piece rates affect the rollout draws and continuation policy. The planner returns separate coverage, bingo, priority-line, and reward projections; the resource types are not converted into one combined reward total.
 
 ## What “Looking Ahead” Means
 
@@ -41,15 +41,15 @@ Imagine choosing between two moves:
 - Move A earns a small amount of value now, but leaves a great piece in storage for later.
 - Move B scores more immediately, but uses up that piece where it may not help much.
 
-The current planner looks through several sampled draws after each candidate move. It follows placements and hand/storage choices in each sequence, stopping when the board is full or the search horizon ends.
+The planner plays each candidate through sampled future sequences until the skip-ready conditions are met or the board is full. This estimates the outcome of the candidate under adaptive-priority future play; it does not search every possible future policy.
 
 Notable tile reward locations remain unknown to this search; it does not predict or assign them. The player’s manually observed reward tracking and skip advice are separate from this move recommendation.
 
 In plain language, it tries to answer:
 
-> Value of this move = projected final tile coverage first, then completion speed, bingo value, and open-space quality.
+> For this first move, what does adaptive-priority play tend to achieve by the end of the board?
 
-Future pieces are sampled using the configured rates, and each candidate sees the same deterministic sequences for a fair comparison. The small sample and narrow beam make the result an estimate, not a measured reward or proof of optimal play.
+Future pieces and hidden notable-reward locations are sampled using the configured model, and each candidate sees the same scenarios for a fair comparison. The sample is still small, and the rollout policy is fixed, so this is evidence for comparing moves rather than proof of optimal play.
 
 ## A Practical Upgrade Path
 
@@ -82,12 +82,13 @@ Compare at least:
 - The simple 4×3 human strategy
 - The current immediate/priority heuristic
 - The current one-draw adaptive heuristic
+- The live full-board rollout planner with adaptive-priority continuation
 
 Track complete-game bingo counts, separate reward totals, priority lines completed, notable rewards collected, tiles covered, and whether/when the skip suggestion became valid. Test varied piece distributions and hidden reward layouts.
 
-### 5. Validate and expand full-board planning
+### 5. Validate full-board planning
 
-Once the simulator is trusted, evaluate each candidate move with future rollouts through skip readiness or the full-board cap:
+The live planner now evaluates each candidate through complete-board rollouts:
 
 1. Apply a candidate placement.
 2. Draw possible future pieces according to the configured rates.
@@ -95,7 +96,7 @@ Once the simulator is trusted, evaluate each candidate move with future rollouts
 4. Continue until the skip-suggestion conditions are met or the board is full.
 5. Average the final outcome vector across many rollouts.
 
-Use bounded Monte Carlo rollouts or beam search rather than assuming exhaustive search is feasible. The same simulator transition rules should power both offline comparisons and live full-game recommendations.
+The remaining work is to compare this planner against the established baselines across held-out seeds and several plausible piece distributions. More samples reduce Monte Carlo noise; they do not prove that the fixed adaptive-priority continuation policy is optimal.
 
 ### 6. Validate on unseen games
 
@@ -103,7 +104,7 @@ Use separate seeded games for tuning and final evaluation. Compare the full-boar
 
 ## What Not to Do Yet
 
-You probably do not need machine learning. There is no reliable training data yet, and the game is small enough that a simulator and short lookahead can provide useful evidence first.
+You probably do not need machine learning yet. There is no reliable real-game training data, and full-board rollouts already let us test strategies directly. First validate the simulator and calibrate piece rates against observed games.
 
 Also avoid adding more unexplained multipliers as the first fix. A few well-tested rules are more useful than a complicated score that nobody can explain.
 
