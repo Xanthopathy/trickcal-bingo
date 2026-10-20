@@ -80,6 +80,10 @@ const getSwapAdvice = (
   handName: string,
   storedName: string,
 ) => {
+  if (handName === storedName) {
+    return `Both pieces are ${handName}.`
+  }
+
   const scoreDifference = storedCandidate.recommendationScore - handCandidate.recommendationScore
   if (scoreDifference > 0) {
     return `Swap to ${storedName}: +${scoreDifference.toFixed(3)} move value.`
