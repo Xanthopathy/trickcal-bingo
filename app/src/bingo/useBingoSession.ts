@@ -392,6 +392,33 @@ export function useBingoSession() {
     }
   }, [board, pieceType, slotPieceType, pieceRates, plannerStrategy, plannerBenchmark, skipThreshold, plannerPatience, trackedPieceCounts, trackingMode])
 
+  const swapSlot = useCallback(() => {
+    let nextPieceType = pieceType
+    let nextSlotPieceType = slotPieceType
+    let nextSelectedPosition: Position | null = null
+
+    if (slotPieceType) {
+      nextPieceType = slotPieceType
+      nextSlotPieceType = pieceType
+      const selectedIndex = recommendations.findIndex(({ center }) =>
+        center.row === selectedPosition?.row && center.col === selectedPosition?.col,
+      )
+      const incomingIndex = Math.min(Math.max(selectedIndex, 0), storedRecommendations.length - 1)
+      nextSelectedPosition = storedRecommendations[incomingIndex]?.center ?? null
+    } else if (pieceType) {
+      nextSlotPieceType = pieceType
+      nextPieceType = null
+    }
+
+    setPieceType(nextPieceType)
+    setSlotPieceType(nextSlotPieceType)
+    setSelectedPosition(nextSelectedPosition)
+    setCursorPosition(null)
+    setHoveredPosition(null)
+    setDismissedHoverPosition(null)
+    setLastBoardClick(null)
+  }, [pieceType, recommendations, selectedPosition, slotPieceType, storedRecommendations])
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const target = event.target
@@ -415,22 +442,7 @@ export function useBingoSession() {
       }
 
       if (key === 's') {
-        let nextPieceType = pieceType
-        let nextSlotPieceType = slotPieceType
-        if (slotPieceType) {
-          nextPieceType = slotPieceType
-          nextSlotPieceType = pieceType
-        } else if (pieceType) {
-          nextSlotPieceType = pieceType
-          nextPieceType = null
-        }
-        setPieceType(nextPieceType)
-        setSlotPieceType(nextSlotPieceType)
-        setSelectedPosition(null)
-        setCursorPosition(null)
-        setHoveredPosition(null)
-        setDismissedHoverPosition(null)
-        setLastBoardClick(null)
+        swapSlot()
         event.preventDefault()
         return
       }
@@ -487,7 +499,7 @@ export function useBingoSession() {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [board, cursorPosition, hoveredPosition, pieceType, recommendations, recordPlacement, selectedPosition, slotPieceType, undo])
+  }, [board, cursorPosition, hoveredPosition, pieceType, recommendations, recordPlacement, selectedPosition, slotPieceType, swapSlot, undo])
 
   const commitPlacement = (center: Position | null) => {
     if (!center || !pieceType) return
@@ -538,27 +550,6 @@ export function useBingoSession() {
       }))
     }
     startNewBoard()
-  }
-
-  const swapSlot = () => {
-    let nextPieceType = pieceType
-    let nextSlotPieceType = slotPieceType
-
-    if (slotPieceType) {
-      nextPieceType = slotPieceType
-      nextSlotPieceType = pieceType
-    } else if (pieceType) {
-      nextSlotPieceType = pieceType
-      nextPieceType = null
-    }
-
-    setPieceType(nextPieceType)
-    setSlotPieceType(nextSlotPieceType)
-    setSelectedPosition(slotPieceType ? storedRecommendations[0]?.center ?? null : null)
-    setCursorPosition(null)
-    setHoveredPosition(null)
-    setDismissedHoverPosition(null)
-    setLastBoardClick(null)
   }
 
   const selectPiece = (nextPieceType: PieceType) => {
