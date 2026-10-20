@@ -23,7 +23,6 @@ type AnalysisPanelProps = Pick<
   | 'selectedPosition'
   | 'setDismissedHoverPosition'
   | 'setHoveredPosition'
-  | 'shouldSwapForHigherCoverage'
   | 'slotPieceType'
   | 'storedRecommendation'
   | 'toggleRecommendation'
@@ -45,26 +44,102 @@ const candidateComparison = (
 ) => {
   if (!comparison) return 'No comparison available.'
 
+  const deltas: string[] = []
   const priorityBingoDifference =
     candidate.benchmark.averagePriorityBingos - comparison.benchmark.averagePriorityBingos
-  if (Math.abs(priorityBingoDifference) >= 0.1) {
-    const direction = priorityBingoDifference > 0 ? '+' : ''
-    return `${direction}${priorityBingoDifference.toFixed(1)} priority bingos vs ${isTopPick ? 'next best' : 'top pick'}`
-  }
+  if (Math.abs(priorityBingoDifference) >= 0.1) deltas.push(`${priorityBingoDifference > 0 ? '+' : ''}${priorityBingoDifference.toFixed(1)} priority`)
 
   const benchmarkBingoDifference = candidate.benchmark.averageBingos - comparison.benchmark.averageBingos
-  if (Math.abs(benchmarkBingoDifference) >= 0.1) {
-    const direction = benchmarkBingoDifference > 0 ? '+' : ''
-    return `${direction}${benchmarkBingoDifference.toFixed(1)} total bingos vs ${isTopPick ? 'next best' : 'top pick'}`
-  }
+  if (Math.abs(benchmarkBingoDifference) >= 0.1) deltas.push(`${benchmarkBingoDifference > 0 ? '+' : ''}${benchmarkBingoDifference.toFixed(1)} total`)
 
-  const readyDifference = candidate.skipReadyProbability - comparison.skipReadyProbability
-  if (Math.abs(readyDifference) >= 0.05) {
-    const direction = readyDifference > 0 ? '+' : ''
-    return `${direction}${Math.round(readyDifference * 100)}% skip-ready vs ${isTopPick ? 'next best' : 'top pick'}`
-  }
+  const newTileDifference = candidate.newCells - comparison.newCells
+  if (newTileDifference !== 0) deltas.push(`${newTileDifference > 0 ? '+' : ''}${newTileDifference} tiles now`)
 
-  return 'Similar projections.'
+  const coinChanceDifference =
+    candidate.benchmark.chanceAllCoinRewards - comparison.benchmark.chanceAllCoinRewards
+  if (Math.abs(coinChanceDifference) >= 0.05) deltas.push(`${coinChanceDifference > 0 ? '+' : ''}${Math.round(coinChanceDifference * 100)}pp coins`)
+
+  const certificateChanceDifference =
+    candidate.benchmark.chanceCertificateReward - comparison.benchmark.chanceCertificateReward
+  if (Math.abs(certificateChanceDifference) >= 0.05) deltas.push(`${certificateChanceDifference > 0 ? '+' : ''}${Math.round(certificateChanceDifference * 100)}pp cert`)
+
+  const comparisonLabel = isTopPick ? 'next best' : 'top pick'
+  return deltas.length > 0
+    ? `${deltas.slice(0, 3).join(' · ')} vs ${comparisonLabel}`
+    : 'Similar checkpoint outcomes.'
+}
+
+const getSwapAdvice = (
+  handCandidate: FullBoardCandidate,
+  storedCandidate: FullBoardCandidate,
+  handName: string,
+  storedName: string,
+) => {
+  const comparisons = [
+    {
+      advantage: storedCandidate.benchmark.averagePriorityBingos - handCandidate.benchmark.averagePriorityBingos,
+      threshold: 0.1,
+      describe: (difference: number) => `${difference.toFixed(1)} priority bingos at ${storedCandidate.benchmark.tiles} tiles`,
+    },
+    {
+      advantage: storedCandidate.benchmark.averageBingos - handCandidate.benchmark.averageBingos,
+      threshold: 0.1,
+      describe: (difference: number) => `${difference.toFixed(1)} total bingos at ${storedCandidate.benchmark.tiles} tiles`,
+    },
+    {
+      advantage: storedCandidate.benchmark.averageCoveredTiles - handCandidate.benchmark.averageCoveredTiles,
+      threshold: 0.5,
+      describe: (difference: number) => `${difference.toFixed(1)} more tiles at stop`,
+    },
+    {
+      advantage: handCandidate.benchmark.averageTurns - storedCandidate.benchmark.averageTurns,
+      threshold: 0.1,
+      describe: (difference: number) => `${difference.toFixed(1)} fewer turns to ${storedCandidate.benchmark.tiles} tiles`,
+    },
+    {
+      advantage: handCandidate.benchmark.averageTurnsToSkipReady - storedCandidate.benchmark.averageTurnsToSkipReady,
+      threshold: 0.1,
+      describe: (difference: number) => `${difference.toFixed(1)} fewer turns from checkpoint to skip-ready`,
+    },
+    {
+      advantage: storedCandidate.benchmark.chanceAllCoinRewards - handCandidate.benchmark.chanceAllCoinRewards,
+      threshold: 0.05,
+      describe: (difference: number) => `${Math.round(difference * 100)}pp better chance at all coin rewards`,
+    },
+    {
+      advantage: storedCandidate.benchmark.averageCoinRewards - handCandidate.benchmark.averageCoinRewards,
+      threshold: 0.1,
+      describe: (difference: number) => `${difference.toFixed(1)} more coin rewards at checkpoint`,
+    },
+    {
+      advantage: storedCandidate.benchmark.chanceCertificateReward - handCandidate.benchmark.chanceCertificateReward,
+      threshold: 0.05,
+      describe: (difference: number) => `${Math.round(difference * 100)}pp better certificate chance`,
+    },
+    {
+      advantage: storedCandidate.immediatePriorityBingos - handCandidate.immediatePriorityBingos,
+      threshold: 1,
+      describe: (difference: number) => `${difference} more immediate priority bingos`,
+    },
+    {
+      advantage: storedCandidate.immediatePriorityProgress - handCandidate.immediatePriorityProgress,
+      threshold: 1,
+      describe: (difference: number) => `${difference} more immediate priority-line tiles`,
+    },
+    {
+      advantage: storedCandidate.newCells - handCandidate.newCells,
+      threshold: 1,
+      describe: (difference: number) => `${difference} more tiles covered immediately`,
+    },
+  ]
+  const leadingDifference = comparisons.find(({ advantage, threshold }) => Math.abs(advantage) >= threshold)
+  if (!leadingDifference) return `No measurable swap advantage; keep ${handName} in hand.`
+
+  const winner = leadingDifference.advantage > 0 ? storedName : handName
+  const difference = leadingDifference.describe(Math.abs(leadingDifference.advantage))
+  return winner === storedName
+    ? `Swap to ${storedName}: ${difference}.`
+    : `Keep ${handName}: ${difference} vs ${storedName}.`
 }
 
 export function AnalysisPanel({ session }: { session: AnalysisPanelProps }) {
@@ -85,7 +160,6 @@ export function AnalysisPanel({ session }: { session: AnalysisPanelProps }) {
     selectedPosition,
     setDismissedHoverPosition,
     setHoveredPosition,
-    shouldSwapForHigherCoverage,
     slotPieceType,
     storedRecommendation,
     toggleRecommendation,
@@ -129,10 +203,6 @@ export function AnalysisPanel({ session }: { session: AnalysisPanelProps }) {
       ? `Completes ${activeCandidate.completedLines.length} bingo${activeCandidate.completedLines.length === 1 ? '' : 's'}`
       : 'No immediate bingo'
     : null
-  const storedCoverageDifference = recommendation && storedRecommendation
-    ? storedRecommendation.projectedCoverage - recommendation.projectedCoverage
-    : 0
-
   return (
     <aside className="analysis-column board-analysis" aria-label="Board analysis">
       <section className="recommendation-section" aria-live="polite">
@@ -150,19 +220,33 @@ export function AnalysisPanel({ session }: { session: AnalysisPanelProps }) {
           <p className="empty-note" role="alert">{plannerError}</p>
         ) : recommendation && pieceType ? (
           <>
-            <button
-              className={`recommended-move ${samePosition(selectedPosition, recommendation.center) ? 'is-selected' : ''} ${samePosition(dismissedHoverPosition, recommendation.center) ? 'is-hover-dismissed' : ''}`}
-              type="button"
-              aria-label={`Select recommended placement ${positionLabel(recommendation.center)}, about ${recommendation.benchmark.averagePriorityBingos.toFixed(1)} priority bingos at ${recommendation.benchmark.tiles} tiles`}
-              onMouseEnter={() => chooseForPreview(recommendation.center)}
-              onMouseLeave={clearPreview}
-              onFocus={() => chooseForPreview(recommendation.center)}
-              onBlur={clearPreview}
-              onClick={() => toggleRecommendation(recommendation.center)}
-            >
-              <strong>{positionLabel(recommendation.center)}</strong>
-              <span className="move-score">~{recommendation.benchmark.averagePriorityBingos.toFixed(1)}</span>
-            </button>
+            <div className="recommendation-actions">
+              <button
+                className={`recommended-move ${samePosition(selectedPosition, recommendation.center) ? 'is-selected' : ''} ${samePosition(dismissedHoverPosition, recommendation.center) ? 'is-hover-dismissed' : ''}`}
+                type="button"
+                aria-label={`Select recommended placement ${positionLabel(recommendation.center)}, about ${recommendation.benchmark.averagePriorityBingos.toFixed(1)} priority bingos at ${recommendation.benchmark.tiles} tiles`}
+                onMouseEnter={() => chooseForPreview(recommendation.center)}
+                onMouseLeave={clearPreview}
+                onFocus={() => chooseForPreview(recommendation.center)}
+                onBlur={clearPreview}
+                onClick={() => toggleRecommendation(recommendation.center)}
+              >
+                <strong>{positionLabel(recommendation.center)}</strong>
+                <span className="move-score">
+                  <strong>~{recommendation.benchmark.averagePriorityBingos.toFixed(1)}</strong>
+                  <small>priority bingos</small>
+                </span>
+              </button>
+              <button
+                className="primary-button recommendation-place"
+                type="button"
+                onClick={() => commitPlacement(activePosition)}
+                disabled={!activePosition}
+              >
+                Place at {activePosition ? positionLabel(activePosition) : '—'}
+                <span aria-hidden="true">→</span>
+              </button>
+            </div>
           </>
         ) : (
           <p className="empty-note">{pieceType ? 'No full-board plan is available for this position.' : 'Select a piece in hand to calculate a full-board plan.'}</p>
@@ -174,7 +258,7 @@ export function AnalysisPanel({ session }: { session: AnalysisPanelProps }) {
           <div className="alternatives">
             <p className="alternatives-title">{alternativesAreNearTied ? 'Near-tied board layouts' : 'Alternative candidates'}</p>
             <div className="alternative-candidates">
-              {recommendations.slice(1, 4).map((candidate, index) => (
+              {recommendations.slice(1, 4).map((candidate) => (
                 <button
                   className={`alternative-row ${samePosition(selectedPosition, candidate.center) ? 'is-selected' : ''} ${samePosition(dismissedHoverPosition, candidate.center) ? 'is-hover-dismissed' : ''}`}
                   type="button"
@@ -185,8 +269,8 @@ export function AnalysisPanel({ session }: { session: AnalysisPanelProps }) {
                   onBlur={clearPreview}
                   onClick={() => toggleRecommendation(candidate.center)}
                 >
-                  <span className="alternative-rank">0{index + 2} · ~{candidate.benchmark.averagePriorityBingos.toFixed(1)}</span>
                   <span className="alternative-position">{positionLabel(candidate.center)}</span>
+                  <span className="alternative-rank">~{candidate.benchmark.averagePriorityBingos.toFixed(1)}</span>
                   <span className="alternative-summary">
                     {candidate.completedLines.length > 0
                       ? `Completes ${candidate.completedLines.length} bingo${candidate.completedLines.length === 1 ? '' : 's'}`
@@ -201,7 +285,7 @@ export function AnalysisPanel({ session }: { session: AnalysisPanelProps }) {
         {recommendation && pieceType && (
           <div className="candidate-explanation" aria-live="polite">
             <div className="candidate-explanation-heading">
-              <p className="section-kicker">WHY THIS MOVE</p>
+              <p className="section-kicker">MOVE ANALYSIS</p>
               <strong>{activeCandidate
                 ? `${isCustomPosition ? 'Custom' : selectedCandidateIndex === 0 ? 'Top pick' : `Option ${selectedCandidateIndex + 1}`} · ${positionLabel(activeCandidate.center)}`
                 : 'Custom board position'}</strong>
@@ -212,34 +296,24 @@ export function AnalysisPanel({ session }: { session: AnalysisPanelProps }) {
                 <dl className="candidate-stats">
                   <div><dt>{activeCandidate.benchmark.tiles} tiles</dt><dd>~{activeCandidate.benchmark.averagePriorityBingos.toFixed(1)} priority · {activeCandidate.benchmark.averageBingos.toFixed(1)} total</dd></div>
                   <div><dt>Now</dt><dd>+{activeCandidate.newCells} {activeCandidate.newCells === 1 ? 'tile' : 'tiles'} · {immediateBingoText}</dd></div>
-                  <div><dt>To stop</dt><dd>{Math.round(activeCandidate.skipReadyProbability * 100)}% ready · {activeCandidate.projectedTurnsToStop.toFixed(1)} turns</dd></div>
-                  <div><dt>Rewards / board</dt><dd>{activeCandidate.projectedReward.leaves.toFixed(1)} LV · {activeCandidate.projectedReward.starCandy.toFixed(1)} SC · {activeCandidate.projectedReward.certificates.toFixed(1)} CRT</dd></div>
+                  <div><dt>To stop</dt><dd>~{activeCandidate.projectedTurnsToStop.toFixed(1)} turns</dd></div>
+                  <div><dt>At {activeCandidate.benchmark.tiles} tiles</dt><dd>{Math.round(activeCandidate.benchmark.chanceAllCoinRewards * 100)}% all coins · {Math.round(activeCandidate.benchmark.chanceCertificateReward * 100)}% certificate</dd></div>
                 </dl>
               </>
             ) : (
               <p>{customPlacementError ?? (isCustomPlacementThinking ? 'Analyzing custom placement…' : 'Click a board position to analyze it.')}</p>
             )}
-            <button
-              className="primary-button"
-              type="button"
-              onClick={() => commitPlacement(activePosition)}
-              disabled={!activePosition}
-            >
-              Place at {activePosition ? positionLabel(activePosition) : '—'}
-              <span aria-hidden="true">→</span>
-            </button>
           </div>
         )}
 
         <div className="swap-advice" aria-live="polite">
           {pieceType && slotPieceType && storedRecommendation && recommendation
-            ? pieceType === slotPieceType
-              ? `Both available pieces are ${pieceName(pieceType)}; swapping will not change the move options.`
-              : Math.abs(storedCoverageDifference) < MIN_MEANINGFUL_COVERAGE_DIFFERENCE
-                ? `No clear coverage reason to swap ${pieceName(pieceType)} for ${pieceName(slotPieceType)}; their full-board coverage estimates are too close to distinguish.`
-                : shouldSwapForHigherCoverage
-                  ? `Swap to stored ${pieceName(slotPieceType)}: projects ${storedCoverageDifference.toFixed(1)} more covered tiles at the simulated stop.`
-                  : `Keep ${pieceName(pieceType)} in hand: projects ${Math.abs(storedCoverageDifference).toFixed(1)} more covered tiles than ${pieceName(slotPieceType)} at the simulated stop.`
+            ? getSwapAdvice(
+              recommendation,
+              storedRecommendation,
+              pieceName(pieceType) ?? 'Current piece',
+              pieceName(slotPieceType) ?? 'Stored piece',
+            )
             : 'Add a piece to storage to compare full-board plans for both available pieces.'}
         </div>
       </section>

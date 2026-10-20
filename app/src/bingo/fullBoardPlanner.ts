@@ -630,7 +630,7 @@ export const planFullBoard = (input: FullBoardPlannerInput): FullBoardPlannerRes
       !evaluatedCandidates.some((other) => other !== candidate && dominates(other, candidate)),
     )
 
-    return nonDominatedCandidates.sort((left, right) =>
+    const compareCandidates = (left: FullBoardCandidate, right: FullBoardCandidate) =>
       right.benchmark.averagePriorityBingos - left.benchmark.averagePriorityBingos ||
       right.benchmark.averageBingos - left.benchmark.averageBingos ||
       right.benchmark.averageCoveredTiles - left.benchmark.averageCoveredTiles ||
@@ -643,8 +643,14 @@ export const planFullBoard = (input: FullBoardPlannerInput): FullBoardPlannerRes
       right.immediatePriorityProgress - left.immediatePriorityProgress ||
       right.newCells - left.newCells ||
       left.center.row - right.center.row ||
-      left.center.col - right.center.col,
-    ).slice(0, 4)
+      left.center.col - right.center.col
+    const rankedCandidates = [...evaluatedCandidates].sort(compareCandidates)
+    const recommendations = nonDominatedCandidates.sort(compareCandidates).slice(0, 4)
+    for (const candidate of rankedCandidates) {
+      if (recommendations.length === 4) break
+      if (!recommendations.includes(candidate)) recommendations.push(candidate)
+    }
+    return recommendations
   }
 
   return {

@@ -192,6 +192,7 @@ export function useBingoSession() {
   const [dismissedHoverPosition, setDismissedHoverPosition] = useState<Position | null>(null)
   const [plannerResult, setPlannerResult] = useState<{
     key: string
+    hand: PieceType
     result?: FullBoardPlannerResult
     error?: string
   } | null>(null)
@@ -203,7 +204,15 @@ export function useBingoSession() {
   const boardGridRef = useRef<HTMLDivElement>(null)
   const plannerWorkerRef = useRef<Worker | null>(null)
   const customPlannerWorkerRef = useRef<Worker | null>(null)
-  const plannerKey = JSON.stringify({ board, pieceType, slotPieceType, pieceRates, plannerStrategy, plannerBenchmark, skipThreshold, plannerPatience })
+  const plannerKey = JSON.stringify({
+    board,
+    pieces: [pieceType, slotPieceType].filter((piece): piece is PieceType => piece !== null).sort(),
+    pieceRates,
+    plannerStrategy,
+    plannerBenchmark,
+    skipThreshold,
+    plannerPatience,
+  })
 
   const recordPlacement = useCallback((placedPieceType: PieceType) => {
     setHistory((previous) => [...previous, {
@@ -238,12 +247,13 @@ export function useBingoSession() {
   }, [history])
 
   useEffect(() => {
-    if (!pieceType) return
+    if (!pieceType || plannerResult?.key === plannerKey) return
+    const requestHand = pieceType
     const worker = new Worker(new URL('./planner.worker.ts', import.meta.url), { type: 'module' })
     plannerWorkerRef.current = worker
     worker.onmessage = (event: MessageEvent<{ type: 'plan'; result?: FullBoardPlannerResult; error?: string }>) => {
       if (plannerWorkerRef.current !== worker) return
-      setPlannerResult({ key: plannerKey, ...event.data })
+      setPlannerResult({ key: plannerKey, hand: requestHand, ...event.data })
       const firstRecommendation = event.data.result?.handRecommendations[0]
       if (firstRecommendation) {
         setSelectedPosition((current) => current ?? firstRecommendation.center)
@@ -253,31 +263,37 @@ export function useBingoSession() {
     }
     worker.onerror = () => {
       if (plannerWorkerRef.current !== worker) return
-      setPlannerResult({ key: plannerKey, error: 'The sampled lookahead planner stopped unexpectedly.' })
+      setPlannerResult({ key: plannerKey, hand: requestHand, error: 'The sampled lookahead planner stopped unexpectedly.' })
       worker.terminate()
       plannerWorkerRef.current = null
     }
     worker.postMessage({
       type: 'plan',
-      input: { board, hand: pieceType, stored: slotPieceType, pieceRates, strategy: plannerStrategy, benchmarkTiles: plannerBenchmark, skipThreshold, patience: plannerPatience },
+      input: { board, hand: requestHand, stored: slotPieceType, pieceRates, strategy: plannerStrategy, benchmarkTiles: plannerBenchmark, skipThreshold, patience: plannerPatience },
     })
     return () => {
       worker.terminate()
       if (plannerWorkerRef.current === worker) plannerWorkerRef.current = null
     }
-  }, [board, pieceType, slotPieceType, pieceRates, plannerStrategy, plannerBenchmark, skipThreshold, plannerPatience, plannerKey])
+  }, [board, pieceType, slotPieceType, pieceRates, plannerStrategy, plannerBenchmark, skipThreshold, plannerPatience, plannerKey, plannerResult?.key])
 
   const plannerResultIsCurrent = plannerResult?.key === plannerKey
   const recommendations = useMemo<FullBoardCandidate[]>(
-    () => pieceType && plannerResultIsCurrent
-      ? plannerResult.result?.handRecommendations ?? []
-      : [],
+    () => {
+      if (!pieceType || !plannerResultIsCurrent || !plannerResult.result) return []
+      return plannerResult.hand === pieceType
+        ? plannerResult.result.handRecommendations
+        : plannerResult.result.storedRecommendations
+    },
     [pieceType, plannerResult, plannerResultIsCurrent],
   )
   const storedRecommendations = useMemo<FullBoardCandidate[]>(
-    () => pieceType && plannerResultIsCurrent
-      ? plannerResult.result?.storedRecommendations ?? []
-      : [],
+    () => {
+      if (!pieceType || !plannerResultIsCurrent || !plannerResult.result) return []
+      return plannerResult.hand === pieceType
+        ? plannerResult.result.storedRecommendations
+        : plannerResult.result.handRecommendations
+    },
     [pieceType, plannerResult, plannerResultIsCurrent],
   )
   const isPlannerThinking = Boolean(pieceType && !plannerResultIsCurrent)
@@ -568,7 +584,7 @@ export function useBingoSession() {
 
     setPieceType(nextPieceType)
     setSlotPieceType(nextSlotPieceType)
-    setSelectedPosition(null)
+    setSelectedPosition(slotPieceType ? storedRecommendations[0]?.center ?? null : null)
     setCursorPosition(null)
     setHoveredPosition(null)
     setDismissedHoverPosition(null)
