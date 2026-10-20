@@ -15,7 +15,7 @@ import {
   type PieceType,
   type PriorityWeights,
 } from '../game'
-import { evaluateFullGamePlacements } from '../simulation/engine'
+import { evaluateFullGamePlacements, type AdaptiveStrategyId } from '../simulation/engine'
 
 const PIECE_TYPES = Object.keys(DEFAULT_PIECE_RATES) as PieceType[]
 const COVERAGE_VALUE = 100
@@ -47,6 +47,8 @@ export const PLANNER_PATIENCE_LEVELS: Record<PlannerPatience, PlannerSearchSetti
 }
 
 export type FullBoardCandidate = AdaptivePlacementCandidate & {
+  immediatePriorityBingos: number
+  immediatePriorityProgress: number
   projectedCoverage: number
   projectedBingos: number
   projectedPriorityBingos: number
@@ -65,6 +67,7 @@ export type FullBoardPlannerInput = {
   hand: PieceType
   stored: PieceType | null
   pieceRates: PieceRates
+  strategy: AdaptiveStrategyId
   priorityWeights?: PriorityWeights
   skipThreshold: number
   patience: PlannerPatience
@@ -164,6 +167,10 @@ const countTrappedGaps = (board: Board): number => {
 const getPriorityLineProgress = (board: Board): number =>
   PRIORITY_LINES
     .reduce((total, line) => total + countLineCells(board, line), 0)
+
+const getPriorityBingoCount = (board: Board): number =>
+  getBoardSummary(board).completedLines
+    .filter((line) => PRIORITY_LINE_IDS.has(line.id)).length
 
 const getPriorityLineScore = (board: Board): number =>
   PRIORITY_LINES
@@ -393,6 +400,8 @@ const rankPiecePlans = (
   const rankDenominator = Math.max(rankedCandidates.length - 1, 1)
   return rankedCandidates.map((candidate, index) => ({
     ...candidate,
+    immediatePriorityBingos: 0,
+    immediatePriorityProgress: 0,
     recommendationScore: Math.round((1 - index / rankDenominator) * 1000) / 10,
     projectedPriorityBingos: 0,
     projectedTurnsToStop: candidate.horizonDraws,
@@ -458,6 +467,7 @@ export const planFullBoard = (input: FullBoardPlannerInput): FullBoardPlannerRes
   const planPiece = (piece: PieceType): FullBoardCandidate[] => {
     const placements = getDistinctPlacements(input.board, piece, input.pieceRates)
     const rollouts = evaluateFullGamePlacements({
+      strategy: input.strategy,
       board: input.board,
       hand: input.hand,
       stored: input.stored,
@@ -472,8 +482,9 @@ export const planFullBoard = (input: FullBoardPlannerInput): FullBoardPlannerRes
       placements.map((candidate) => [`${candidate.center.row}-${candidate.center.col}`, candidate]),
     )
 
-    return rollouts.map((rollout) => {
+    const evaluatedCandidates = rollouts.map((rollout) => {
       const candidate = placementByCenter.get(`${rollout.center.row}-${rollout.center.col}`)!
+      const immediateBoard = placePiece(input.board, piece, candidate.center)
       const regularBingos = rollout.averageBingos - rollout.averagePriorityBingos
       const priorityScore = rollout.averagePriorityProgress * PRIORITY_BINGO_VALUE / BOARD_SIZE
       const score = rollout.averageCoveredTiles * COVERAGE_VALUE +
@@ -484,6 +495,8 @@ export const planFullBoard = (input: FullBoardPlannerInput): FullBoardPlannerRes
       return {
         ...candidate,
         immediateScore: candidate.score,
+        immediatePriorityBingos: getPriorityBingoCount(immediateBoard) - getPriorityBingoCount(input.board),
+        immediatePriorityProgress: getPriorityLineProgress(immediateBoard) - getPriorityLineProgress(input.board),
         expectedFutureScore: score,
         score,
         projectedCoverage: rollout.averageCoveredTiles,
@@ -498,13 +511,51 @@ export const planFullBoard = (input: FullBoardPlannerInput): FullBoardPlannerRes
         skipReadyProbability: rollout.skipReadyProbability,
         projectedReward: rollout.averageReward,
         explanation: `Projects ${rollout.averageCoveredTiles.toFixed(1)} covered tiles by the end of a simulated board.`,
-        futureExplanation: `Full-board simulation over ${searchSettings.samples} shared sequences using the adaptive-priority continuation policy.`,
+        futureExplanation: `Full-board simulation over ${searchSettings.samples} shared sequences using the ${input.strategy} continuation policy.`,
       }
-    }).sort((left, right) =>
+    })
+    const epsilon = 1e-9
+    const dominates = (better: FullBoardCandidate, worse: FullBoardCandidate) => {
+      const noWorse =
+        better.projectedCoverage >= worse.projectedCoverage - epsilon &&
+        better.projectedBingos >= worse.projectedBingos - epsilon &&
+        better.projectedPriorityBingos >= worse.projectedPriorityBingos - epsilon &&
+        better.projectedPriorityProgress >= worse.projectedPriorityProgress - epsilon &&
+        better.skipReadyProbability >= worse.skipReadyProbability - epsilon &&
+        better.projectedTurnsToStop <= worse.projectedTurnsToStop + epsilon &&
+        better.projectedReward.leaves >= worse.projectedReward.leaves - epsilon &&
+        better.projectedReward.starCandy >= worse.projectedReward.starCandy - epsilon &&
+        better.projectedReward.certificates >= worse.projectedReward.certificates - epsilon &&
+        better.immediatePriorityBingos >= worse.immediatePriorityBingos &&
+        better.immediatePriorityProgress >= worse.immediatePriorityProgress &&
+        better.newCells >= worse.newCells
+      const strictlyBetter =
+        better.projectedCoverage > worse.projectedCoverage + epsilon ||
+        better.projectedBingos > worse.projectedBingos + epsilon ||
+        better.projectedPriorityBingos > worse.projectedPriorityBingos + epsilon ||
+        better.projectedPriorityProgress > worse.projectedPriorityProgress + epsilon ||
+        better.skipReadyProbability > worse.skipReadyProbability + epsilon ||
+        better.projectedTurnsToStop < worse.projectedTurnsToStop - epsilon ||
+        better.projectedReward.leaves > worse.projectedReward.leaves + epsilon ||
+        better.projectedReward.starCandy > worse.projectedReward.starCandy + epsilon ||
+        better.projectedReward.certificates > worse.projectedReward.certificates + epsilon ||
+        better.immediatePriorityBingos > worse.immediatePriorityBingos ||
+        better.immediatePriorityProgress > worse.immediatePriorityProgress ||
+        better.newCells > worse.newCells
+      return noWorse && strictlyBetter
+    }
+    const nonDominatedCandidates = evaluatedCandidates.filter((candidate) =>
+      !evaluatedCandidates.some((other) => other !== candidate && dominates(other, candidate)),
+    )
+
+    return nonDominatedCandidates.sort((left, right) =>
       right.score - left.score ||
       right.projectedCoverage - left.projectedCoverage ||
       right.projectedPriorityBingos - left.projectedPriorityBingos ||
       right.projectedPriorityProgress - left.projectedPriorityProgress ||
+      right.immediatePriorityBingos - left.immediatePriorityBingos ||
+      right.immediatePriorityProgress - left.immediatePriorityProgress ||
+      right.newCells - left.newCells ||
       left.center.row - right.center.row ||
       left.center.col - right.center.col,
     ).slice(0, 4)

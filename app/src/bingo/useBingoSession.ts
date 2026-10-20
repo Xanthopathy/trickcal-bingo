@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   BOARD_SIZE,
   DEFAULT_PIECE_RATES,
-  DEFAULT_PRIORITY_WEIGHTS,
   canPlacePiece,
   createEmptyBoard,
   getBoardSummary,
@@ -12,8 +11,8 @@ import {
   type PieceRates,
   type PieceType,
   type Position,
-  type PriorityWeights,
 } from '../game'
+import type { AdaptiveStrategyId } from '../simulation/engine'
 import { PIECE_OPTIONS } from './constants'
 import {
   DEFAULT_PLANNER_PATIENCE,
@@ -44,7 +43,7 @@ type SavedState = {
   pieceType: PieceType | null
   slotPieceType: PieceType | null
   pieceRates: PieceRates
-  priorityWeights: PriorityWeights
+  plannerStrategy: AdaptiveStrategyId
   skipThreshold: number
   plannerPatience: PlannerPatience
   trackedPieceCounts: Record<PieceType, number>
@@ -86,16 +85,8 @@ const isPieceCounts = (value: unknown): value is Record<PieceType, number> => {
   )
 }
 
-const isPriorityWeights = (value: unknown): value is PriorityWeights => {
-  if (typeof value !== 'object' || value === null) return false
-  const weights = value as Record<string, unknown>
-  return ['diagonal', 'priority', 'outer', 'other'].every(
-    (key) =>
-      typeof weights[key] === 'number' &&
-      Number.isFinite(weights[key]) &&
-      weights[key] >= 0,
-  )
-}
+const isAdaptiveStrategy = (value: unknown): value is AdaptiveStrategyId =>
+  value === 'adaptive-fill' || value === 'adaptive-priority' || value === 'adaptive-hybrid'
 
 const isPlannerPatience = (value: unknown): value is PlannerPatience =>
   typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 5
@@ -105,7 +96,7 @@ const defaultSavedState = (): SavedState => ({
   pieceType: 'cross',
   slotPieceType: null,
   pieceRates: { ...DEFAULT_PIECE_RATES },
-  priorityWeights: { ...DEFAULT_PRIORITY_WEIGHTS },
+  plannerStrategy: 'adaptive-hybrid',
   skipThreshold: DEFAULT_SKIP_THRESHOLD,
   plannerPatience: DEFAULT_PLANNER_PATIENCE,
   trackedPieceCounts: { ...DEFAULT_TRACKED_PIECE_COUNTS },
@@ -136,10 +127,10 @@ const readSavedState = (): SavedState => {
           'pieceRates' in parsed && isPieceRates(parsed.pieceRates)
             ? parsed.pieceRates
             : { ...DEFAULT_PIECE_RATES },
-        priorityWeights:
-          'priorityWeights' in parsed && isPriorityWeights(parsed.priorityWeights)
-            ? parsed.priorityWeights
-            : { ...DEFAULT_PRIORITY_WEIGHTS },
+        plannerStrategy:
+          'plannerStrategy' in parsed && isAdaptiveStrategy(parsed.plannerStrategy)
+            ? parsed.plannerStrategy
+            : 'adaptive-hybrid',
         skipThreshold:
           'skipThreshold' in parsed &&
             typeof parsed.skipThreshold === 'number' &&
@@ -177,7 +168,7 @@ export function useBingoSession() {
   const [pieceType, setPieceType] = useState<PieceType | null>(savedState.pieceType)
   const [slotPieceType, setSlotPieceType] = useState<PieceType | null>(savedState.slotPieceType)
   const [pieceRates, setPieceRates] = useState(savedState.pieceRates)
-  const [priorityWeights, setPriorityWeights] = useState(savedState.priorityWeights)
+  const [plannerStrategy, setPlannerStrategy] = useState(savedState.plannerStrategy)
   const [skipThreshold, setSkipThreshold] = useState(savedState.skipThreshold)
   const [plannerPatience, setPlannerPatience] = useState(savedState.plannerPatience)
   const [trackedPieceCounts, setTrackedPieceCounts] = useState(savedState.trackedPieceCounts)
@@ -196,7 +187,7 @@ export function useBingoSession() {
   } | null>(null)
   const boardGridRef = useRef<HTMLDivElement>(null)
   const plannerWorkerRef = useRef<Worker | null>(null)
-  const plannerKey = JSON.stringify({ board, pieceType, slotPieceType, pieceRates, priorityWeights, skipThreshold, plannerPatience })
+  const plannerKey = JSON.stringify({ board, pieceType, slotPieceType, pieceRates, plannerStrategy, skipThreshold, plannerPatience })
 
   const recordPlacement = useCallback((placedPieceType: PieceType) => {
     setHistory((previous) => [...previous, {
@@ -250,12 +241,12 @@ export function useBingoSession() {
       worker.terminate()
       plannerWorkerRef.current = null
     }
-    worker.postMessage({ board, hand: pieceType, stored: slotPieceType, pieceRates, priorityWeights, skipThreshold, patience: plannerPatience })
+    worker.postMessage({ board, hand: pieceType, stored: slotPieceType, pieceRates, plannerStrategy, skipThreshold, patience: plannerPatience })
     return () => {
       worker.terminate()
       if (plannerWorkerRef.current === worker) plannerWorkerRef.current = null
     }
-  }, [board, pieceType, slotPieceType, pieceRates, priorityWeights, skipThreshold, plannerPatience, plannerKey])
+  }, [board, pieceType, slotPieceType, pieceRates, plannerStrategy, skipThreshold, plannerPatience, plannerKey])
 
   const plannerResultIsCurrent = plannerResult?.key === plannerKey
   const recommendations = useMemo<FullBoardCandidate[]>(
@@ -311,12 +302,12 @@ export function useBingoSession() {
     try {
       window.localStorage.setItem(
         STORAGE_KEY,
-        JSON.stringify({ board, pieceType, slotPieceType, pieceRates, priorityWeights, skipThreshold, plannerPatience, trackedPieceCounts, trackingMode }),
+        JSON.stringify({ board, pieceType, slotPieceType, pieceRates, plannerStrategy, skipThreshold, plannerPatience, trackedPieceCounts, trackingMode }),
       )
     } catch {
       // Continue using the board if browser storage is unavailable.
     }
-  }, [board, pieceType, slotPieceType, pieceRates, priorityWeights, skipThreshold, plannerPatience, trackedPieceCounts, trackingMode])
+  }, [board, pieceType, slotPieceType, pieceRates, plannerStrategy, skipThreshold, plannerPatience, trackedPieceCounts, trackingMode])
 
   useEffect(() => {
     const boardGrid = boardGridRef.current
@@ -558,17 +549,9 @@ export function useBingoSession() {
     setLastBoardClick(null)
   }
 
-  const updatePriorityWeight = (key: keyof PriorityWeights, value: number) => {
-    const nextWeights = {
-      ...priorityWeights,
-      [key]: Math.max(0, Math.min(12, Number.isFinite(value) ? value : 0)),
-    }
-    setPriorityWeights(nextWeights)
-  }
-
   const resetSettings = () => {
     setPieceRates({ ...DEFAULT_PIECE_RATES })
-    setPriorityWeights({ ...DEFAULT_PRIORITY_WEIGHTS })
+    setPlannerStrategy('adaptive-hybrid')
     setSkipThreshold(DEFAULT_SKIP_THRESHOLD)
     setPlannerPatience(DEFAULT_PLANNER_PATIENCE)
   }
@@ -613,7 +596,7 @@ export function useBingoSession() {
     trackingMode,
     plannerError,
     plannerPatience,
-    priorityWeights,
+    plannerStrategy,
     recommendation,
     recommendations,
     selectedPosition,
@@ -635,7 +618,7 @@ export function useBingoSession() {
     setPieceRates,
     updateTrackedPieceCount,
     setTrackingMode,
-    setPriorityWeights,
+    setPlannerStrategy,
     setPlannerPatience,
     setSelectedPosition,
     setSettingsOpen,
@@ -646,7 +629,6 @@ export function useBingoSession() {
     toggleRecommendation,
     undo,
     updatePieceRate,
-    updatePriorityWeight,
   }
 }
 

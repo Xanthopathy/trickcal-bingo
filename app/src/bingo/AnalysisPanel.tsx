@@ -2,6 +2,7 @@ import { formatBingoReward, type Position } from '../game'
 import type { BingoSession } from './useBingoSession'
 import { MIN_MEANINGFUL_COVERAGE_DIFFERENCE, type FullBoardCandidate } from './fullBoardPlanner'
 import { PIECE_OPTIONS, positionLabel } from './constants'
+import { ADAPTIVE_STRATEGIES } from '../simulation/engine'
 
 type AnalysisPanelProps = Pick<
   BingoSession,
@@ -11,6 +12,7 @@ type AnalysisPanelProps = Pick<
   | 'hoveredPosition'
   | 'isPlannerThinking'
   | 'pieceType'
+  | 'plannerStrategy'
   | 'plannerError'
   | 'recommendation'
   | 'recommendations'
@@ -59,6 +61,24 @@ const candidateComparison = (
     return `Coverage and bingo projections are close; this leaves ${Math.abs(priorityProgressDifference).toFixed(1)} ${direction} filled cells across the diagonals, Row 4, and Column D than ${comparisonName} at the simulated stop.`
   }
 
+  const immediateBingoDifference = candidate.immediatePriorityBingos - comparison.immediatePriorityBingos
+  if (immediateBingoDifference !== 0) {
+    const direction = immediateBingoDifference > 0 ? 'more' : 'fewer'
+    return `Full-board projections are close; this placement immediately completes ${Math.abs(immediateBingoDifference)} ${direction} core bingo${Math.abs(immediateBingoDifference) === 1 ? '' : 's'} than ${comparisonName}.`
+  }
+
+  const immediateProgressDifference = candidate.immediatePriorityProgress - comparison.immediatePriorityProgress
+  if (immediateProgressDifference !== 0) {
+    const direction = immediateProgressDifference > 0 ? 'more' : 'fewer'
+    return `Full-board projections are close; this placement immediately adds ${Math.abs(immediateProgressDifference)} ${direction} cells across the core lines than ${comparisonName}.`
+  }
+
+  const newCellDifference = candidate.newCells - comparison.newCells
+  if (newCellDifference !== 0) {
+    const direction = newCellDifference > 0 ? 'more' : 'fewer'
+    return `Full-board projections are close; this placement immediately covers ${Math.abs(newCellDifference)} ${direction} new tiles than ${comparisonName}.`
+  }
+
   const gapDifference = candidate.projectedGapCount - comparison.projectedGapCount
   if (Math.abs(gapDifference) >= 1) {
     const direction = gapDifference < 0 ? 'fewer' : 'more'
@@ -74,6 +94,7 @@ export function AnalysisPanel({ session }: { session: AnalysisPanelProps }) {
     commitPlacement,
     dismissedHoverPosition,
     pieceType,
+    plannerStrategy,
     isPlannerThinking,
     plannerError,
     recommendation,
@@ -104,7 +125,10 @@ export function AnalysisPanel({ session }: { session: AnalysisPanelProps }) {
     recommendations.slice(1).every((candidate) =>
       Math.abs(candidate.projectedCoverage - recommendations[0].projectedCoverage) < MIN_MEANINGFUL_COVERAGE_DIFFERENCE &&
       Math.abs(candidate.projectedBingos - recommendations[0].projectedBingos) < 0.5 &&
-      Math.abs(candidate.projectedGapCount - recommendations[0].projectedGapCount) < 1,
+      Math.abs(candidate.projectedGapCount - recommendations[0].projectedGapCount) < 1 &&
+      candidate.immediatePriorityBingos === recommendations[0].immediatePriorityBingos &&
+      candidate.immediatePriorityProgress === recommendations[0].immediatePriorityProgress &&
+      candidate.newCells === recommendations[0].newCells,
     )
   const activeCandidate = isCustomPosition
     ? null
@@ -157,7 +181,7 @@ export function AnalysisPanel({ session }: { session: AnalysisPanelProps }) {
           <p className="empty-note">{pieceType ? 'No full-board plan is available for this position.' : 'Select a piece in hand to calculate a full-board plan.'}</p>
         )}
 
-        {recommendation && <p className="score-legend">Each move is evaluated through simulated board stop using adaptive-priority play afterward. Reward types stay separate; projections are estimates, not guarantees.</p>}
+        {recommendation && <p className="score-legend">Each move is evaluated through simulated board stop using {ADAPTIVE_STRATEGIES.find(({ id }) => id === plannerStrategy)?.name ?? 'the selected strategy'} afterward. Reward types stay separate; projections are estimates, not guarantees.</p>}
 
         {recommendations.length > 1 && (
           <div className="alternatives">

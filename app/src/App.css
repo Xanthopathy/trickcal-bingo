@@ -101,7 +101,21 @@
   text-align: right;
 }
 
-.setting-row input:focus-visible { outline: 2px solid #85c892; outline-offset: 1px; }
+.setting-row select {
+  width: 100%;
+  min-width: 0;
+  height: 30px;
+  padding: 3px 7px;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  background: #171c19;
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+}
+
+.setting-row input:focus-visible,
+.setting-row select:focus-visible { outline: 2px solid #85c892; outline-offset: 1px; }
 .setting-input-suffix { display: grid; grid-template-columns: minmax(0, 1fr) 18px; align-items: center; gap: 5px; }
 .setting-input-suffix > span { color: var(--muted); font-size: 11px; }
 .settings-group { display: grid; gap: 4px; margin-top: 13px; padding-top: 12px; border-top: 1px solid var(--line); }

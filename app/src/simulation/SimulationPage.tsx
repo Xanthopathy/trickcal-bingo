@@ -1,5 +1,5 @@
 ﻿import { useEffect, useRef, useState } from 'react'
-import { BOARD_SIZE, createEmptyBoard, type PieceRates, type PriorityWeights, type Position } from '../game'
+import { BOARD_SIZE, createEmptyBoard, type PieceRates, type Position } from '../game'
 import {
   runSimulationReplay,
   SIMULATION_CHECKPOINTS,
@@ -14,7 +14,6 @@ import {
 
 type SimulationPageProps = {
   pieceRates: PieceRates
-  priorityWeights: PriorityWeights
   skipThreshold: number
 }
 
@@ -70,7 +69,6 @@ function ReplayBoard({ move }: { move: SimulationMove | null }) {
 
 export function SimulationPage({
   pieceRates,
-  priorityWeights,
   skipThreshold,
 }: SimulationPageProps) {
   const [selectedStrategies, setSelectedStrategies] = useState(INITIAL_STRATEGIES)
@@ -114,7 +112,6 @@ export function SimulationPage({
       seed: enteredSeed && Number.isSafeInteger(parsedSeed) ? parsedSeed : generateRandomSeed(),
       skipThreshold,
       pieceRates,
-      priorityWeights,
     }
     setLastRunInput(input)
     setComparison(null)

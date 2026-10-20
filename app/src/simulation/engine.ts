@@ -18,22 +18,18 @@
   type PriorityWeights,
 } from '../game'
 
-export type SimulationStrategyId =
-  | 'four-by-three'
+export type AdaptiveStrategyId =
   | 'adaptive-fill'
   | 'adaptive-priority'
   | 'adaptive-hybrid'
 
-export const SIMULATION_STRATEGIES: {
-  id: SimulationStrategyId
+export type SimulationStrategyId = 'four-by-three' | AdaptiveStrategyId
+
+export const ADAPTIVE_STRATEGIES: {
+  id: AdaptiveStrategyId
   name: string
   description: string
 }[] = [
-    {
-      id: 'four-by-three',
-      name: '4×3 baseline',
-      description: 'Uses the outer quadrants for small shapes and saves the middle row and column for long pieces.',
-    },
     {
       id: 'adaptive-fill',
       name: 'Adaptive: fill tiles',
@@ -49,6 +45,19 @@ export const SIMULATION_STRATEGIES: {
       name: 'Adaptive: fill + core bingos',
       description: 'Keeps within one tile of the best fill, then favors completing and advancing the four core bingos.',
     },
+  ]
+
+export const SIMULATION_STRATEGIES: {
+  id: SimulationStrategyId
+  name: string
+  description: string
+}[] = [
+    {
+      id: 'four-by-three',
+      name: '4×3 baseline',
+      description: 'Uses the outer quadrants for small shapes and saves the middle row and column for long pieces.',
+    },
+    ...ADAPTIVE_STRATEGIES,
   ]
 
 export type SimulationInput = {
@@ -126,6 +135,7 @@ export type FullGameRolloutCandidate = {
 }
 
 export type FullGameRolloutInput = {
+  strategy: AdaptiveStrategyId
   board: Board
   hand: PieceType
   stored: PieceType | null
@@ -610,7 +620,7 @@ export const evaluateFullGamePlacements = (
     }
     const games = scenarios.map((scenario) =>
       simulateGame(
-        'adaptive-priority',
+        input.strategy,
         scenario,
         rates,
         priorities,

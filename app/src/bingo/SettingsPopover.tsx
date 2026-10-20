@@ -1,48 +1,43 @@
-import type { PriorityWeights } from '../game'
 import { PLANNER_PATIENCE_LEVELS, type PlannerPatience } from './fullBoardPlanner'
 import type { BingoSession } from './useBingoSession'
 import { PIECE_OPTIONS } from './constants'
+import { ADAPTIVE_STRATEGIES } from '../simulation/engine'
+import type { AdaptiveStrategyId } from '../simulation/engine'
 
 type SettingsPopoverProps = Pick<
   BingoSession,
   | 'pieceRates'
   | 'plannerPatience'
-  | 'priorityWeights'
+  | 'plannerStrategy'
   | 'resetSettings'
   | 'resetSiteData'
   | 'setSettingsOpen'
   | 'setPlannerPatience'
+  | 'setPlannerStrategy'
   | 'setSkipThreshold'
   | 'settingsOpen'
   | 'skipThreshold'
   | 'totalPieceRate'
   | 'updatePieceRate'
-  | 'updatePriorityWeight'
 >
-
-const PRIORITY_OPTIONS: { key: keyof PriorityWeights; label: string }[] = [
-  { key: 'diagonal', label: 'Diagonals' },
-  { key: 'priority', label: 'Row 4 / Column D' },
-  { key: 'outer', label: 'Outer rows / columns' },
-  { key: 'other', label: 'Other lines' },
-]
 
 export function SettingsPopover({ session }: { session: SettingsPopoverProps }) {
   const {
     pieceRates,
     plannerPatience,
-    priorityWeights,
+    plannerStrategy,
     resetSettings,
     resetSiteData,
     setSettingsOpen,
     setPlannerPatience,
+    setPlannerStrategy,
     setSkipThreshold,
     settingsOpen,
     skipThreshold,
     totalPieceRate,
     updatePieceRate,
-    updatePriorityWeight,
   } = session
+  const selectedStrategy = ADAPTIVE_STRATEGIES.find(({ id }) => id === plannerStrategy)!
 
   return (
     <div className="settings-anchor">
@@ -88,6 +83,22 @@ export function SettingsPopover({ session }: { session: SettingsPopoverProps }) 
               }
             />
           </label>
+
+          <div className="settings-group">
+            <label className="setting-row" htmlFor="planner-strategy">
+              <span>Planner strategy</span>
+              <select
+                id="planner-strategy"
+                value={plannerStrategy}
+                onChange={(event) => setPlannerStrategy(event.currentTarget.value as AdaptiveStrategyId)}
+              >
+                {ADAPTIVE_STRATEGIES.map(({ id, name }) => (
+                  <option key={id} value={id}>{name.replace('Adaptive: ', '')}</option>
+                ))}
+              </select>
+            </label>
+            <p>{selectedStrategy.description} This policy chooses future moves in each full-board rollout.</p>
+          </div>
 
           <div className="settings-group planner-patience-group">
             <div className="settings-group-heading">
@@ -135,29 +146,6 @@ export function SettingsPopover({ session }: { session: SettingsPopoverProps }) 
                   />
                   <span>%</span>
                 </span>
-              </label>
-            ))}
-          </div>
-
-          <div className="settings-group">
-            <div className="settings-group-heading">
-              <h3>Simulation heuristic priorities</h3>
-              <span>Experimental</span>
-            </div>
-            <p>Used by Simulation strategies only; the planner ignores these values.</p>
-            {PRIORITY_OPTIONS.map(({ key, label }) => (
-              <label className="setting-row" key={key}>
-                <span>{label}</span>
-                <input
-                  type="number"
-                  min="0"
-                  max="12"
-                  step="0.1"
-                  value={priorityWeights[key]}
-                  onChange={(event) =>
-                    updatePriorityWeight(key, Number(event.currentTarget.value))
-                  }
-                />
               </label>
             ))}
           </div>

@@ -389,9 +389,9 @@ The current adaptive ranker adds a **one-draw expected continuation** to the imm
 
 This is a short lookahead heuristic, not a full-game solver. Its score is a ranking value, not an actual combined amount of leaves, star candy, and certificates.
 
-### E. Current Sampled Lookahead Planner
+### E. Full-Board Rollout Planner
 
-The planner evaluates each available first move with a worker-backed sampled lookahead. Its five patience levels range from two future draws/four samples to fourteen future draws/twenty-four samples; Balanced defaults to four draws/eight samples. Maximum is estimated at roughly 45–90 seconds, depending on device and board. It models the hand and storage slot and ranks coverage at the selected horizon, then bingo count and enclosed-gap risk. It does not guarantee a complete-game simulation. Adjustable heuristic priorities are used only by Simulation strategies. This is a bounded estimate, not exhaustive search; compare it against the simulation baselines on held-out seeds before treating it as stronger.
+The planner evaluates each available first move through sampled complete-board rollouts using the shared Simulation Lab game loop. The player can choose Adaptive: fill tiles, Adaptive: priority bingos, or Adaptive: fill + core bingos as the continuation policy for future simulated turns. Its five patience levels run 4 to 24 rollouts; Balanced defaults to 8. Each rollout continues until skip readiness or a full board, with a 60-draw cap. The planner is not exhaustive and its estimate depends on the selected continuation strategy and piece-rate assumptions; compare it against simulation baselines on held-out seeds before treating it as stronger.
 
 Unknown notable-tile locations are not predicted by the live planner. Manual reward observations and skip advice remain separate concerns.
 

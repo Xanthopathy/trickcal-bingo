@@ -61,7 +61,6 @@ function App() {
         activePage === 'simulation' ? (
           <SimulationPage
             pieceRates={session.pieceRates}
-            priorityWeights={session.priorityWeights}
             skipThreshold={session.skipThreshold}
           />
         ) : (
