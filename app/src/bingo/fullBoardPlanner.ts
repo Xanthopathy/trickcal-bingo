@@ -15,7 +15,12 @@ import {
   type PieceType,
   type PriorityWeights,
 } from '../game'
-import { evaluateFullGamePlacements, type AdaptiveStrategyId } from '../simulation/engine'
+import {
+  evaluateFullGamePlacements,
+  type AdaptiveStrategyId,
+  type SimulationCheckpoint,
+  type SimulationCheckpointStats,
+} from '../simulation/engine'
 
 const PIECE_TYPES = Object.keys(DEFAULT_PIECE_RATES) as PieceType[]
 const COVERAGE_VALUE = 100
@@ -49,6 +54,7 @@ export const PLANNER_PATIENCE_LEVELS: Record<PlannerPatience, PlannerSearchSetti
 export type FullBoardCandidate = AdaptivePlacementCandidate & {
   immediatePriorityBingos: number
   immediatePriorityProgress: number
+  benchmark: SimulationCheckpointStats
   projectedCoverage: number
   projectedBingos: number
   projectedPriorityBingos: number
@@ -68,6 +74,7 @@ export type FullBoardPlannerInput = {
   stored: PieceType | null
   pieceRates: PieceRates
   strategy: AdaptiveStrategyId
+  benchmarkTiles: SimulationCheckpoint
   priorityWeights?: PriorityWeights
   skipThreshold: number
   patience: PlannerPatience
@@ -326,6 +333,7 @@ const rankPiecePlans = (
   scenarios: PieceType[][],
   pieceRates: PieceRates,
   searchSettings: PlannerSearchSettings,
+  benchmarkTiles: SimulationCheckpoint,
 ): FullBoardCandidate[] => {
   const rankedPlacements = rankPlacements(board, piece, pieceRates)
   const hasUsefulPlacement = rankedPlacements.some((candidate) => candidate.newCells > 0)
@@ -402,6 +410,18 @@ const rankPiecePlans = (
     ...candidate,
     immediatePriorityBingos: 0,
     immediatePriorityProgress: 0,
+    benchmark: {
+      tiles: benchmarkTiles,
+      averageTurns: candidate.horizonDraws,
+      averageCoveredTiles: candidate.projectedCoverage,
+      averageTurnsToSkipReady: 0,
+      averageBingos: candidate.projectedBingos,
+      averagePriorityBingos: 0,
+      averageCoinRewards: 0,
+      chanceAllCoinRewards: 0,
+      chanceCertificateReward: 0,
+      averageReward: { leaves: 0, starCandy: 0, certificates: 0 },
+    },
     recommendationScore: Math.round((1 - index / rankDenominator) * 1000) / 10,
     projectedPriorityBingos: 0,
     projectedTurnsToStop: candidate.horizonDraws,
@@ -423,6 +443,7 @@ export const planSampledLookahead = (input: FullBoardPlannerInput): FullBoardPla
       scenarios,
       pieceRates,
       searchSettings,
+      input.benchmarkTiles,
     ),
     storedRecommendations: input.stored
       ? rankPiecePlans(
@@ -432,6 +453,7 @@ export const planSampledLookahead = (input: FullBoardPlannerInput): FullBoardPla
         scenarios,
         pieceRates,
         searchSettings,
+        input.benchmarkTiles,
       )
       : [],
     futureTurns: searchSettings.futureTurns,
@@ -468,6 +490,7 @@ export const planFullBoard = (input: FullBoardPlannerInput): FullBoardPlannerRes
     const placements = getDistinctPlacements(input.board, piece, input.pieceRates)
     const rollouts = evaluateFullGamePlacements({
       strategy: input.strategy,
+      benchmarkTiles: input.benchmarkTiles,
       board: input.board,
       hand: input.hand,
       stored: input.stored,
@@ -510,6 +533,7 @@ export const planFullBoard = (input: FullBoardPlannerInput): FullBoardPlannerRes
         projectedTurnsToStop: rollout.averageTurns,
         skipReadyProbability: rollout.skipReadyProbability,
         projectedReward: rollout.averageReward,
+        benchmark: rollout.benchmark,
         explanation: `Projects ${rollout.averageCoveredTiles.toFixed(1)} covered tiles by the end of a simulated board.`,
         futureExplanation: `Full-board simulation over ${searchSettings.samples} shared sequences using the ${input.strategy} continuation policy.`,
       }
@@ -549,10 +573,14 @@ export const planFullBoard = (input: FullBoardPlannerInput): FullBoardPlannerRes
     )
 
     return nonDominatedCandidates.sort((left, right) =>
-      right.score - left.score ||
-      right.projectedCoverage - left.projectedCoverage ||
-      right.projectedPriorityBingos - left.projectedPriorityBingos ||
-      right.projectedPriorityProgress - left.projectedPriorityProgress ||
+      right.benchmark.averagePriorityBingos - left.benchmark.averagePriorityBingos ||
+      right.benchmark.averageBingos - left.benchmark.averageBingos ||
+      right.benchmark.averageCoveredTiles - left.benchmark.averageCoveredTiles ||
+      left.benchmark.averageTurns - right.benchmark.averageTurns ||
+      right.benchmark.chanceAllCoinRewards - left.benchmark.chanceAllCoinRewards ||
+      right.benchmark.averageCoinRewards - left.benchmark.averageCoinRewards ||
+      right.benchmark.chanceCertificateReward - left.benchmark.chanceCertificateReward ||
+      right.benchmark.averageReward.certificates - left.benchmark.averageReward.certificates ||
       right.immediatePriorityBingos - left.immediatePriorityBingos ||
       right.immediatePriorityProgress - left.immediatePriorityProgress ||
       right.newCells - left.newCells ||

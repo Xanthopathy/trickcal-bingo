@@ -12,7 +12,7 @@ import {
   type PieceType,
   type Position,
 } from '../game'
-import type { AdaptiveStrategyId } from '../simulation/engine'
+import { SIMULATION_CHECKPOINTS, type AdaptiveStrategyId, type SimulationCheckpoint } from '../simulation/engine'
 import { PIECE_OPTIONS } from './constants'
 import {
   DEFAULT_PLANNER_PATIENCE,
@@ -44,6 +44,7 @@ type SavedState = {
   slotPieceType: PieceType | null
   pieceRates: PieceRates
   plannerStrategy: AdaptiveStrategyId
+  plannerBenchmark: SimulationCheckpoint
   skipThreshold: number
   plannerPatience: PlannerPatience
   trackedPieceCounts: Record<PieceType, number>
@@ -88,6 +89,9 @@ const isPieceCounts = (value: unknown): value is Record<PieceType, number> => {
 const isAdaptiveStrategy = (value: unknown): value is AdaptiveStrategyId =>
   value === 'adaptive-fill' || value === 'adaptive-priority' || value === 'adaptive-hybrid'
 
+const isSimulationCheckpoint = (value: unknown): value is SimulationCheckpoint =>
+  SIMULATION_CHECKPOINTS.some((checkpoint) => checkpoint === value)
+
 const isPlannerPatience = (value: unknown): value is PlannerPatience =>
   typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 5
 
@@ -97,6 +101,7 @@ const defaultSavedState = (): SavedState => ({
   slotPieceType: null,
   pieceRates: { ...DEFAULT_PIECE_RATES },
   plannerStrategy: 'adaptive-hybrid',
+  plannerBenchmark: 39,
   skipThreshold: DEFAULT_SKIP_THRESHOLD,
   plannerPatience: DEFAULT_PLANNER_PATIENCE,
   trackedPieceCounts: { ...DEFAULT_TRACKED_PIECE_COUNTS },
@@ -131,6 +136,10 @@ const readSavedState = (): SavedState => {
           'plannerStrategy' in parsed && isAdaptiveStrategy(parsed.plannerStrategy)
             ? parsed.plannerStrategy
             : 'adaptive-hybrid',
+        plannerBenchmark:
+          'plannerBenchmark' in parsed && isSimulationCheckpoint(parsed.plannerBenchmark)
+            ? parsed.plannerBenchmark
+            : 39,
         skipThreshold:
           'skipThreshold' in parsed &&
             typeof parsed.skipThreshold === 'number' &&
@@ -169,6 +178,7 @@ export function useBingoSession() {
   const [slotPieceType, setSlotPieceType] = useState<PieceType | null>(savedState.slotPieceType)
   const [pieceRates, setPieceRates] = useState(savedState.pieceRates)
   const [plannerStrategy, setPlannerStrategy] = useState(savedState.plannerStrategy)
+  const [plannerBenchmark, setPlannerBenchmark] = useState(savedState.plannerBenchmark)
   const [skipThreshold, setSkipThreshold] = useState(savedState.skipThreshold)
   const [plannerPatience, setPlannerPatience] = useState(savedState.plannerPatience)
   const [trackedPieceCounts, setTrackedPieceCounts] = useState(savedState.trackedPieceCounts)
@@ -187,7 +197,7 @@ export function useBingoSession() {
   } | null>(null)
   const boardGridRef = useRef<HTMLDivElement>(null)
   const plannerWorkerRef = useRef<Worker | null>(null)
-  const plannerKey = JSON.stringify({ board, pieceType, slotPieceType, pieceRates, plannerStrategy, skipThreshold, plannerPatience })
+  const plannerKey = JSON.stringify({ board, pieceType, slotPieceType, pieceRates, plannerStrategy, plannerBenchmark, skipThreshold, plannerPatience })
 
   const recordPlacement = useCallback((placedPieceType: PieceType) => {
     setHistory((previous) => [...previous, {
@@ -241,12 +251,12 @@ export function useBingoSession() {
       worker.terminate()
       plannerWorkerRef.current = null
     }
-    worker.postMessage({ board, hand: pieceType, stored: slotPieceType, pieceRates, plannerStrategy, skipThreshold, patience: plannerPatience })
+    worker.postMessage({ board, hand: pieceType, stored: slotPieceType, pieceRates, plannerStrategy, benchmarkTiles: plannerBenchmark, skipThreshold, patience: plannerPatience })
     return () => {
       worker.terminate()
       if (plannerWorkerRef.current === worker) plannerWorkerRef.current = null
     }
-  }, [board, pieceType, slotPieceType, pieceRates, plannerStrategy, skipThreshold, plannerPatience, plannerKey])
+  }, [board, pieceType, slotPieceType, pieceRates, plannerStrategy, plannerBenchmark, skipThreshold, plannerPatience, plannerKey])
 
   const plannerResultIsCurrent = plannerResult?.key === plannerKey
   const recommendations = useMemo<FullBoardCandidate[]>(
@@ -302,12 +312,12 @@ export function useBingoSession() {
     try {
       window.localStorage.setItem(
         STORAGE_KEY,
-        JSON.stringify({ board, pieceType, slotPieceType, pieceRates, plannerStrategy, skipThreshold, plannerPatience, trackedPieceCounts, trackingMode }),
+        JSON.stringify({ board, pieceType, slotPieceType, pieceRates, plannerStrategy, plannerBenchmark, skipThreshold, plannerPatience, trackedPieceCounts, trackingMode }),
       )
     } catch {
       // Continue using the board if browser storage is unavailable.
     }
-  }, [board, pieceType, slotPieceType, pieceRates, plannerStrategy, skipThreshold, plannerPatience, trackedPieceCounts, trackingMode])
+  }, [board, pieceType, slotPieceType, pieceRates, plannerStrategy, plannerBenchmark, skipThreshold, plannerPatience, trackedPieceCounts, trackingMode])
 
   useEffect(() => {
     const boardGrid = boardGridRef.current
@@ -552,6 +562,7 @@ export function useBingoSession() {
   const resetSettings = () => {
     setPieceRates({ ...DEFAULT_PIECE_RATES })
     setPlannerStrategy('adaptive-hybrid')
+    setPlannerBenchmark(39)
     setSkipThreshold(DEFAULT_SKIP_THRESHOLD)
     setPlannerPatience(DEFAULT_PLANNER_PATIENCE)
   }
@@ -597,6 +608,7 @@ export function useBingoSession() {
     plannerError,
     plannerPatience,
     plannerStrategy,
+    plannerBenchmark,
     recommendation,
     recommendations,
     selectedPosition,
@@ -619,6 +631,7 @@ export function useBingoSession() {
     updateTrackedPieceCount,
     setTrackingMode,
     setPlannerStrategy,
+    setPlannerBenchmark,
     setPlannerPatience,
     setSelectedPosition,
     setSettingsOpen,

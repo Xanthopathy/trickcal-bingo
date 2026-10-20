@@ -1,18 +1,20 @@
 import { PLANNER_PATIENCE_LEVELS, type PlannerPatience } from './fullBoardPlanner'
 import type { BingoSession } from './useBingoSession'
 import { PIECE_OPTIONS } from './constants'
-import { ADAPTIVE_STRATEGIES } from '../simulation/engine'
-import type { AdaptiveStrategyId } from '../simulation/engine'
+import { ADAPTIVE_STRATEGIES, SIMULATION_CHECKPOINTS } from '../simulation/engine'
+import type { AdaptiveStrategyId, SimulationCheckpoint } from '../simulation/engine'
 
 type SettingsPopoverProps = Pick<
   BingoSession,
   | 'pieceRates'
   | 'plannerPatience'
+  | 'plannerBenchmark'
   | 'plannerStrategy'
   | 'resetSettings'
   | 'resetSiteData'
   | 'setSettingsOpen'
   | 'setPlannerPatience'
+  | 'setPlannerBenchmark'
   | 'setPlannerStrategy'
   | 'setSkipThreshold'
   | 'settingsOpen'
@@ -25,11 +27,13 @@ export function SettingsPopover({ session }: { session: SettingsPopoverProps }) 
   const {
     pieceRates,
     plannerPatience,
+    plannerBenchmark,
     plannerStrategy,
     resetSettings,
     resetSiteData,
     setSettingsOpen,
     setPlannerPatience,
+    setPlannerBenchmark,
     setPlannerStrategy,
     setSkipThreshold,
     settingsOpen,
@@ -98,6 +102,22 @@ export function SettingsPopover({ session }: { session: SettingsPopoverProps }) 
               </select>
             </label>
             <p>{selectedStrategy.description} This policy chooses future moves in each full-board rollout.</p>
+          </div>
+
+          <div className="settings-group">
+            <label className="setting-row" htmlFor="planner-benchmark">
+              <span>Planner benchmark</span>
+              <select
+                id="planner-benchmark"
+                value={plannerBenchmark}
+                onChange={(event) => setPlannerBenchmark(Number(event.currentTarget.value) as SimulationCheckpoint)}
+              >
+                {SIMULATION_CHECKPOINTS.map((checkpoint) => (
+                  <option key={checkpoint} value={checkpoint}>{checkpoint} tiles</option>
+                ))}
+              </select>
+            </label>
+            <p>Rank candidate moves by their simulated outcomes at this coverage checkpoint.</p>
           </div>
 
           <div className="settings-group planner-patience-group">

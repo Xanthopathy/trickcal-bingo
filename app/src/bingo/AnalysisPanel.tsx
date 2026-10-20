@@ -12,6 +12,7 @@ type AnalysisPanelProps = Pick<
   | 'hoveredPosition'
   | 'isPlannerThinking'
   | 'pieceType'
+  | 'plannerBenchmark'
   | 'plannerStrategy'
   | 'plannerError'
   | 'recommendation'
@@ -40,6 +41,26 @@ const candidateComparison = (
   isTopPick: boolean,
 ) => {
   if (!comparison) return 'No other evaluated move is available for comparison.'
+
+  const priorityBingoDifference =
+    candidate.benchmark.averagePriorityBingos - comparison.benchmark.averagePriorityBingos
+  if (Math.abs(priorityBingoDifference) >= 0.1) {
+    const direction = priorityBingoDifference > 0 ? 'more' : 'fewer'
+    return `At ${candidate.benchmark.tiles} tiles, this projects ${Math.abs(priorityBingoDifference).toFixed(1)} ${direction} priority bingos than ${isTopPick ? 'the next-best move' : 'the top recommendation'}.`
+  }
+
+  const benchmarkBingoDifference = candidate.benchmark.averageBingos - comparison.benchmark.averageBingos
+  if (Math.abs(benchmarkBingoDifference) >= 0.1) {
+    const direction = benchmarkBingoDifference > 0 ? 'more' : 'fewer'
+    return `Priority bingos are close; this projects ${Math.abs(benchmarkBingoDifference).toFixed(1)} ${direction} total bingos at ${candidate.benchmark.tiles} tiles.`
+  }
+
+  const coinRewardDifference =
+    candidate.benchmark.averageCoinRewards - comparison.benchmark.averageCoinRewards
+  if (Math.abs(coinRewardDifference) >= 0.1) {
+    const direction = coinRewardDifference > 0 ? 'more' : 'fewer'
+    return `Bingo results are close; this projects ${Math.abs(coinRewardDifference).toFixed(1)} ${direction} coin rewards at ${candidate.benchmark.tiles} tiles.`
+  }
 
   const coverageDifference = candidate.projectedCoverage - comparison.projectedCoverage
   const comparisonName = isTopPick ? 'the next-best move' : 'the top recommendation'
@@ -94,6 +115,7 @@ export function AnalysisPanel({ session }: { session: AnalysisPanelProps }) {
     commitPlacement,
     dismissedHoverPosition,
     pieceType,
+    plannerBenchmark,
     plannerStrategy,
     isPlannerThinking,
     plannerError,
@@ -173,15 +195,15 @@ export function AnalysisPanel({ session }: { session: AnalysisPanelProps }) {
               onClick={() => toggleRecommendation(recommendation.center)}
             >
               <strong>{positionLabel(recommendation.center)}</strong>
-              <p>Top projected board fill</p>
-              <span className="move-score">~{recommendation.projectedCoverage.toFixed(1)} tiles at stop</span>
+              <p>Top benchmark outcome</p>
+              <span className="move-score">~{recommendation.benchmark.averagePriorityBingos.toFixed(1)} priority / {recommendation.benchmark.averageBingos.toFixed(1)} total bingos at {recommendation.benchmark.tiles} tiles</span>
             </button>
           </>
         ) : (
           <p className="empty-note">{pieceType ? 'No full-board plan is available for this position.' : 'Select a piece in hand to calculate a full-board plan.'}</p>
         )}
 
-        {recommendation && <p className="score-legend">Each move is evaluated through simulated board stop using {ADAPTIVE_STRATEGIES.find(({ id }) => id === plannerStrategy)?.name ?? 'the selected strategy'} afterward. Reward types stay separate; projections are estimates, not guarantees.</p>}
+        {recommendation && <p className="score-legend">Ranked at the {plannerBenchmark}-tile checkpoint using {ADAPTIVE_STRATEGIES.find(({ id }) => id === plannerStrategy)?.name ?? 'the selected strategy'}. Reward types stay separate; projections are estimates, not guarantees.</p>}
 
         {recommendations.length > 1 && (
           <div className="alternatives">
@@ -198,7 +220,7 @@ export function AnalysisPanel({ session }: { session: AnalysisPanelProps }) {
                   onBlur={clearPreview}
                   onClick={() => toggleRecommendation(candidate.center)}
                 >
-                  <span className="alternative-rank">0{index + 2} · ~{candidate.projectedCoverage.toFixed(1)} tiles</span>
+                  <span className="alternative-rank">0{index + 2} · ~{candidate.benchmark.averagePriorityBingos.toFixed(1)} priority bingos at {candidate.benchmark.tiles}</span>
                   <span className="alternative-position">{positionLabel(candidate.center)}</span>
                   <span className="alternative-summary">
                     {candidate.completedLines.length > 0

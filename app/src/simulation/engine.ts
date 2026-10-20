@@ -91,6 +91,7 @@ export type SimulationCheckpoint = typeof SIMULATION_CHECKPOINTS[number]
 export type SimulationCheckpointStats = {
   tiles: SimulationCheckpoint
   averageTurns: number
+  averageCoveredTiles: number
   averageTurnsToSkipReady: number
   averageBingos: number
   averagePriorityBingos: number
@@ -136,6 +137,7 @@ export type FullGameRolloutCandidate = {
 
 export type FullGameRolloutInput = {
   strategy: AdaptiveStrategyId
+  benchmarkTiles: SimulationCheckpoint
   board: Board
   hand: PieceType
   stored: PieceType | null
@@ -148,6 +150,7 @@ export type FullGameRolloutInput = {
 }
 
 export type FullGameRolloutResult = FullGameRolloutCandidate & {
+  benchmark: SimulationCheckpointStats
   averageTurns: number
   averageCoveredTiles: number
   averageBingos: number
@@ -630,10 +633,32 @@ export const evaluateFullGamePlacements = (
       ),
     )
     const final = games.map((game) => game.finalSnapshot)
+    const checkpointSnapshots = games.map((game) =>
+      game.checkpoints.get(input.benchmarkTiles) ?? game.finalSnapshot,
+    )
+    const skipSnapshots = games.map((game) => game.skipSnapshot)
     const average = (values: number[]) => values.reduce((total, value) => total + value, 0) / samples
 
     return {
       ...candidate,
+      benchmark: {
+        tiles: input.benchmarkTiles,
+        averageTurns: average(checkpointSnapshots.map((snapshot) => snapshot.turns)),
+        averageCoveredTiles: average(checkpointSnapshots.map((snapshot) => snapshot.coveredTiles)),
+        averageTurnsToSkipReady: average(checkpointSnapshots.map((snapshot, index) =>
+          Math.max(0, skipSnapshots[index].turns - snapshot.turns),
+        )),
+        averageBingos: average(checkpointSnapshots.map((snapshot) => snapshot.bingos)),
+        averagePriorityBingos: average(checkpointSnapshots.map((snapshot) => snapshot.priorityBingos)),
+        averageCoinRewards: average(checkpointSnapshots.map((snapshot) => snapshot.coinRewards)),
+        chanceAllCoinRewards: checkpointSnapshots.filter((snapshot) => snapshot.coinRewards === 3).length / samples,
+        chanceCertificateReward: checkpointSnapshots.filter((snapshot) => snapshot.certificateReward).length / samples,
+        averageReward: {
+          leaves: average(checkpointSnapshots.map((snapshot) => snapshot.reward.leaves)),
+          starCandy: average(checkpointSnapshots.map((snapshot) => snapshot.reward.starCandy)),
+          certificates: average(checkpointSnapshots.map((snapshot) => snapshot.reward.certificates)),
+        },
+      },
       averageTurns: average(final.map((snapshot) => snapshot.turns)),
       averageCoveredTiles: average(final.map((snapshot) => snapshot.coveredTiles)),
       averageBingos: average(final.map((snapshot) => snapshot.bingos)),
@@ -700,6 +725,7 @@ export const runSimulationComparison = (input: SimulationInput): SimulationCompa
       return {
         tiles,
         averageTurns: average(snapshots.map((snapshot) => snapshot.turns)),
+        averageCoveredTiles: average(snapshots.map((snapshot) => snapshot.coveredTiles)),
         averageTurnsToSkipReady: average(snapshots.map((snapshot, index) =>
           Math.max(0, atSkip[index].turns - snapshot.turns),
         )),
