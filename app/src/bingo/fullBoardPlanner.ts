@@ -1,6 +1,8 @@
 import {
   BOARD_SIZE,
+  BINGO_LINES,
   DEFAULT_PIECE_RATES,
+  countLineCells,
   getBoardSummary,
   getPlacementDelta,
   placePiece,
@@ -14,8 +16,11 @@ import {
 
 const PIECE_TYPES = Object.keys(DEFAULT_PIECE_RATES) as PieceType[]
 const COVERAGE_VALUE = 100
-const BINGO_TIE_VALUE = 1
+const REGULAR_BINGO_VALUE = 20
+const PRIORITY_BINGO_VALUE = REGULAR_BINGO_VALUE * 5
 const GAP_PENALTY = 0.5
+const PRIORITY_LINE_IDS = new Set(['diagonal-main', 'diagonal-reverse', 'row-3', 'column-3'])
+const PRIORITY_LINES = BINGO_LINES.filter((line) => PRIORITY_LINE_IDS.has(line.id))
 export const MIN_MEANINGFUL_COVERAGE_DIFFERENCE = 0.5
 
 export type PlannerPatience = 1 | 2 | 3 | 4 | 5
@@ -42,6 +47,7 @@ export const PLANNER_PATIENCE_LEVELS: Record<PlannerPatience, PlannerSearchSetti
 export type FullBoardCandidate = AdaptivePlacementCandidate & {
   projectedCoverage: number
   projectedBingos: number
+  projectedPriorityProgress: number
   projectedGapCount: number
   recommendationScore: number
   horizonDraws: number
@@ -73,6 +79,7 @@ type CandidateStats = {
   candidate: PlacementCandidate
   coverageTotal: number
   bingoTotal: number
+  priorityProgressTotal: number
   gapTotal: number
   scoreTotal: number
 }
@@ -146,11 +153,30 @@ const countTrappedGaps = (board: Board): number => {
   return trapped
 }
 
+const getPriorityLineProgress = (board: Board): number =>
+  PRIORITY_LINES
+    .reduce((total, line) => total + countLineCells(board, line), 0)
+
+const getPriorityLineScore = (board: Board): number =>
+  PRIORITY_LINES
+    .reduce((total, line) =>
+      total + countLineCells(board, line) * PRIORITY_BINGO_VALUE / BOARD_SIZE,
+      0)
+
+const getRegularBingoScore = (completedLines: ReturnType<typeof getBoardSummary>['completedLines']): number =>
+  completedLines.reduce(
+    (total, line) => total + (PRIORITY_LINE_IDS.has(line.id) ? 0 : REGULAR_BINGO_VALUE),
+    0,
+  )
+
 const boardScore = (
   board: Board,
 ): number => {
   const summary = getBoardSummary(board)
-  return summary.coveredTiles * COVERAGE_VALUE + summary.completedLines.length * BINGO_TIE_VALUE - countTrappedGaps(board) * GAP_PENALTY
+  return summary.coveredTiles * COVERAGE_VALUE +
+    getRegularBingoScore(summary.completedLines) +
+    getPriorityLineScore(board) -
+    countTrappedGaps(board) * GAP_PENALTY
 }
 
 const placementCenters = (piece: PieceType) => {
@@ -189,33 +215,24 @@ const candidateActions = (
       board,
       stored: otherPiece,
       newTiles: delta.newCells.length,
-      score: summary.coveredTiles * COVERAGE_VALUE + summary.completedLines.length * BINGO_TIE_VALUE - countTrappedGaps(board) * GAP_PENALTY,
+      score: summary.coveredTiles * COVERAGE_VALUE +
+        getRegularBingoScore(summary.completedLines) +
+        getPriorityLineScore(board) -
+        countTrappedGaps(board) * GAP_PENALTY,
       center,
     }
   })
 
   candidates.sort(
     (left, right) =>
-      right.newTiles - left.newTiles ||
       right.score - left.score ||
+      right.newTiles - left.newTiles ||
       left.center.row - right.center.row ||
       left.center.col - right.center.col,
   )
 
   const selected: typeof candidates = []
   const selectedKeys = new Set<string>()
-  const bestCoverage = candidates[0]?.newTiles ?? 0
-
-  for (const coverage of [bestCoverage, bestCoverage - 1, bestCoverage - 2]) {
-    for (const candidate of candidates) {
-      if (candidate.newTiles !== coverage) continue
-      const key = boardKey(candidate.board)
-      if (selectedKeys.has(key)) continue
-      selected.push(candidate)
-      selectedKeys.add(key)
-      if (selected.length >= actionsPerPiece) return selected
-    }
-  }
 
   for (const candidate of candidates) {
     const key = boardKey(candidate.board)
@@ -281,6 +298,8 @@ const searchScenario = (
   const summary = getBoardSummary(finalBoard)
   return {
     summary,
+    priorityProgress: getPriorityLineProgress(finalBoard),
+    priorityScore: getPriorityLineScore(finalBoard),
     trappedGaps: countTrappedGaps(finalBoard),
   }
 }
@@ -310,6 +329,7 @@ const rankPiecePlans = (
     candidate,
     coverageTotal: 0,
     bingoTotal: 0,
+    priorityProgressTotal: 0,
     gapTotal: 0,
     scoreTotal: 0,
   }))
@@ -318,7 +338,7 @@ const rankPiecePlans = (
     const nextBoard = placePiece(board, piece, stats.candidate.center)
     const initialStored = storedPiece
     for (const scenario of scenarios) {
-      const { summary, trappedGaps } = searchScenario(
+      const { summary, priorityProgress, priorityScore, trappedGaps } = searchScenario(
         nextBoard,
         initialStored,
         scenario,
@@ -326,13 +346,17 @@ const rankPiecePlans = (
       )
       stats.coverageTotal += summary.coveredTiles
       stats.bingoTotal += summary.completedLines.length
+      stats.priorityProgressTotal += priorityProgress
       stats.gapTotal += trappedGaps
-      stats.scoreTotal += summary.coveredTiles * COVERAGE_VALUE + summary.completedLines.length * BINGO_TIE_VALUE - trappedGaps * GAP_PENALTY
+      stats.scoreTotal += summary.coveredTiles * COVERAGE_VALUE +
+        getRegularBingoScore(summary.completedLines) +
+        priorityScore -
+        trappedGaps * GAP_PENALTY
     }
   }
 
   const rankedCandidates = candidateStats
-    .map(({ candidate, coverageTotal, bingoTotal, gapTotal, scoreTotal }) => {
+    .map(({ candidate, coverageTotal, bingoTotal, priorityProgressTotal, gapTotal, scoreTotal }) => {
       const projectedCoverage = coverageTotal / scenarios.length
       return {
         ...candidate,
@@ -340,6 +364,7 @@ const rankPiecePlans = (
         score: scoreTotal / scenarios.length,
         projectedCoverage,
         projectedBingos: bingoTotal / scenarios.length,
+        projectedPriorityProgress: priorityProgressTotal / scenarios.length,
         projectedGapCount: gapTotal / scenarios.length,
         horizonDraws: searchSettings.futureTurns,
         sampleCount: scenarios.length,
@@ -357,10 +382,10 @@ const rankPiecePlans = (
     )
     .slice(0, 4)
 
-  const bestScore = rankedCandidates[0]?.score ?? 0
-  return rankedCandidates.map((candidate) => ({
+  const rankDenominator = Math.max(rankedCandidates.length - 1, 1)
+  return rankedCandidates.map((candidate, index) => ({
     ...candidate,
-    recommendationScore: Math.max(0, Math.round((100 - (bestScore - candidate.score)) * 10) / 10),
+    recommendationScore: Math.round((1 - index / rankDenominator) * 1000) / 10,
   }))
 }
 

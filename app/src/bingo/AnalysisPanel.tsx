@@ -52,6 +52,13 @@ const candidateComparison = (
     return `Projected tile coverage is effectively tied; this projects ${Math.abs(bingoDifference).toFixed(1)} ${direction} completed bingos than ${comparisonName}.`
   }
 
+  const priorityProgressDifference =
+    candidate.projectedPriorityProgress - comparison.projectedPriorityProgress
+  if (Math.abs(priorityProgressDifference) >= 0.5) {
+    const direction = priorityProgressDifference > 0 ? 'more' : 'less'
+    return `Coverage and bingo projections are close; this advances the diagonals, Row 4, and Column D by ${Math.abs(priorityProgressDifference).toFixed(1)} ${direction} line cells than ${comparisonName}.`
+  }
+
   const gapDifference = candidate.projectedGapCount - comparison.projectedGapCount
   if (Math.abs(gapDifference) >= 1) {
     const direction = gapDifference < 0 ? 'fewer' : 'more'
@@ -143,14 +150,14 @@ export function AnalysisPanel({ session }: { session: AnalysisPanelProps }) {
             >
               <strong>{positionLabel(recommendation.center)}</strong>
               <p>Top projected board fill</p>
-              <span className="move-score">Score {recommendation.recommendationScore.toFixed(1)}</span>
+              <span className="move-score">Rank {recommendation.recommendationScore.toFixed(1)}</span>
             </button>
           </>
         ) : (
           <p className="empty-note">{pieceType ? 'No full-board plan is available for this position.' : 'Select a piece in hand to calculate a full-board plan.'}</p>
         )}
 
-        {recommendation && <p className="score-legend">Scores compare this piece’s placements: projected coverage dominates, with bingos and gaps as tie-breakers. 100 is the top score shown, not a probability.</p>}
+        {recommendation && <p className="score-legend">Rank scores order this shortlist by rollout score, then projected coverage and tile gain. Each position gets a distinct value; gaps are not proportional measures of advantage.</p>}
 
         {recommendations.length > 1 && (
           <div className="alternatives">
@@ -191,7 +198,7 @@ export function AnalysisPanel({ session }: { session: AnalysisPanelProps }) {
             {activeCandidate ? (
               <>
                 <p>{candidateComparison(activeCandidate, comparisonCandidate, selectedCandidateIndex === 0)}</p>
-                <p>{`Covers ${activeCandidate.newCells} previously empty ${activeCandidate.newCells === 1 ? 'tile' : 'tiles'} now. ${immediateBingoText}`}</p>
+                <p>{`Covers ${activeCandidate.newCells} previously empty ${activeCandidate.newCells === 1 ? 'tile' : 'tiles'} now. ${immediateBingoText} The search projects ${activeCandidate.projectedPriorityProgress.toFixed(1)} filled cells across the diagonals, Row 4, and Column D.`}</p>
                 <small>Estimate from {activeCandidate.sampleCount} shared draw samples over the next {activeCandidate.horizonDraws} draws.</small>
               </>
             ) : (
