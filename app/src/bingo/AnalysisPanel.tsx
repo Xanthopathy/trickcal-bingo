@@ -80,71 +80,14 @@ const getSwapAdvice = (
   handName: string,
   storedName: string,
 ) => {
-  const comparisons = [
-    {
-      advantage: storedCandidate.benchmark.averagePriorityBingos - handCandidate.benchmark.averagePriorityBingos,
-      threshold: 0.1,
-      describe: (difference: number) => `${difference.toFixed(1)} priority bingos at ${storedCandidate.benchmark.tiles} tiles`,
-    },
-    {
-      advantage: storedCandidate.benchmark.averageBingos - handCandidate.benchmark.averageBingos,
-      threshold: 0.1,
-      describe: (difference: number) => `${difference.toFixed(1)} total bingos at ${storedCandidate.benchmark.tiles} tiles`,
-    },
-    {
-      advantage: storedCandidate.benchmark.averageCoveredTiles - handCandidate.benchmark.averageCoveredTiles,
-      threshold: 0.5,
-      describe: (difference: number) => `${difference.toFixed(1)} more tiles at stop`,
-    },
-    {
-      advantage: handCandidate.benchmark.averageTurns - storedCandidate.benchmark.averageTurns,
-      threshold: 0.1,
-      describe: (difference: number) => `${difference.toFixed(1)} fewer turns to ${storedCandidate.benchmark.tiles} tiles`,
-    },
-    {
-      advantage: handCandidate.benchmark.averageTurnsToSkipReady - storedCandidate.benchmark.averageTurnsToSkipReady,
-      threshold: 0.1,
-      describe: (difference: number) => `${difference.toFixed(1)} fewer turns from checkpoint to skip-ready`,
-    },
-    {
-      advantage: storedCandidate.benchmark.chanceAllCoinRewards - handCandidate.benchmark.chanceAllCoinRewards,
-      threshold: 0.05,
-      describe: (difference: number) => `${Math.round(difference * 100)}pp better chance at all coin rewards`,
-    },
-    {
-      advantage: storedCandidate.benchmark.averageCoinRewards - handCandidate.benchmark.averageCoinRewards,
-      threshold: 0.1,
-      describe: (difference: number) => `${difference.toFixed(1)} more coin rewards at checkpoint`,
-    },
-    {
-      advantage: storedCandidate.benchmark.chanceCertificateReward - handCandidate.benchmark.chanceCertificateReward,
-      threshold: 0.05,
-      describe: (difference: number) => `${Math.round(difference * 100)}pp better certificate chance`,
-    },
-    {
-      advantage: storedCandidate.immediatePriorityBingos - handCandidate.immediatePriorityBingos,
-      threshold: 1,
-      describe: (difference: number) => `${difference} more immediate priority bingos`,
-    },
-    {
-      advantage: storedCandidate.immediatePriorityProgress - handCandidate.immediatePriorityProgress,
-      threshold: 1,
-      describe: (difference: number) => `${difference} more immediate priority-line tiles`,
-    },
-    {
-      advantage: storedCandidate.newCells - handCandidate.newCells,
-      threshold: 1,
-      describe: (difference: number) => `${difference} more tiles covered immediately`,
-    },
-  ]
-  const leadingDifference = comparisons.find(({ advantage, threshold }) => Math.abs(advantage) >= threshold)
-  if (!leadingDifference) return `No measurable swap advantage; keep ${handName} in hand.`
-
-  const winner = leadingDifference.advantage > 0 ? storedName : handName
-  const difference = leadingDifference.describe(Math.abs(leadingDifference.advantage))
-  return winner === storedName
-    ? `Swap to ${storedName}: ${difference}.`
-    : `Keep ${handName}: ${difference} vs ${storedName}.`
+  const scoreDifference = storedCandidate.recommendationScore - handCandidate.recommendationScore
+  if (scoreDifference > 0) {
+    return `Swap to ${storedName}: +${scoreDifference.toFixed(3)} move value.`
+  }
+  if (scoreDifference < 0) {
+    return `Keep ${handName}: +${Math.abs(scoreDifference).toFixed(3)} move value.`
+  }
+  return `Move values tie at ${handCandidate.recommendationScore.toFixed(3)}; keep ${handName} in hand.`
 }
 
 export function AnalysisPanel({ session }: { session: AnalysisPanelProps }) {
