@@ -299,9 +299,9 @@ export function AnalysisPanel({ session }: { session: AnalysisPanelProps }) {
               <>
                 <p>{candidateComparison(activeCandidate, comparisonCandidate, activeIsTopPick)}</p>
                 <dl className="candidate-stats">
-                  <div><dt>At stop</dt><dd>~{activeCandidate.projectedCoverage.toFixed(1)} tiles · {activeCandidate.projectedPriorityBingos.toFixed(1)} priority · {activeCandidate.projectedBingos.toFixed(1)} total</dd></div>
+                  <div><dt>At stop</dt><dd>{activeCandidate.projectedCoverage.toFixed(1)} tiles · {activeCandidate.projectedPriorityBingos.toFixed(1)} priority · {activeCandidate.projectedBingos.toFixed(1)} total</dd></div>
                   <div><dt>Now</dt><dd>+{activeCandidate.newCells} {activeCandidate.newCells === 1 ? 'tile' : 'tiles'} · {immediateBingoText}</dd></div>
-                  <div><dt>To stop</dt><dd>~{activeCandidate.projectedTurnsToStop.toFixed(1)} turns</dd></div>
+                  <div><dt>To stop</dt><dd>{activeCandidate.projectedTurnsToStop.toFixed(1)} turns</dd></div>
                   {coveredCount < plannerBenchmark ? (
                     <div><dt>At {plannerBenchmark} tiles</dt><dd>{Math.round(activeCandidate.benchmark.chanceAllCoinRewards * 100)}% all coins · {Math.round(activeCandidate.benchmark.chanceCertificateReward * 100)}% certificate</dd></div>
                   ) : (

@@ -79,6 +79,8 @@ const calculateRecommendationScore = (
     10 * fraction(candidate.projectedBingos, BINGO_LINES.length) +
     15 * fraction(candidate.projectedPriorityBingos, PRIORITY_LINES.length) +
     10 * fraction(candidate.projectedPriorityProgress, PRIORITY_LINES.length * BOARD_SIZE) +
+    5 * fraction(candidate.immediatePriorityProgress, 12) +
+    2 * fraction(candidate.immediatePriorityBingos, PRIORITY_LINES.length) +
     20 * candidate.skipReadyProbability +
     10 * (1 - fraction(candidate.projectedTurnsToStop, 60)) +
     10 * fraction(candidate.newCells, 9) -
@@ -545,7 +547,7 @@ export const analyzeFullBoardPlacement = (
     priorityScore -
     rollout.averageGapCount * GAP_PENALTY
 
-  return {
+  const analyzedCandidate: FullBoardCandidate = {
     ...candidate,
     immediateScore: candidate.score,
     immediatePriorityBingos: getPriorityBingoCount(immediateBoard) - getPriorityBingoCount(input.board),
@@ -567,6 +569,12 @@ export const analyzeFullBoardPlacement = (
     explanation: `Projects ${rollout.averageCoveredTiles.toFixed(1)} covered tiles by the end of a simulated board.`,
     futureExplanation: `Full-board simulation over ${searchSettings.samples} shared sequences using the ${input.strategy} continuation policy.`,
   }
+  analyzedCandidate.recommendationScore = calculateRecommendationScore(
+    analyzedCandidate,
+    getBoardSummary(input.board).coveredTiles,
+    input.benchmarkTiles,
+  )
+  return analyzedCandidate
 }
 
 export const planFullBoard = (input: FullBoardPlannerInput): FullBoardPlannerResult => {
